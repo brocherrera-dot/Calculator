@@ -47,7 +47,13 @@ function NumberInput({
     />
   );
 }
-function Slider({ value, onChange, min = 0, max = 100, step = 1 }: {
+function Slider({
+  value,
+  onChange,
+  min = 0,
+  max = 100,
+  step = 1,
+}: {
   value: number;
   onChange: (v: number) => void;
   min?: number;
@@ -69,7 +75,10 @@ function Slider({ value, onChange, min = 0, max = 100, step = 1 }: {
 
 function fmt(n: number) {
   if (!Number.isFinite(n)) return "—";
-  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function lerp(low: number, high: number, t: number) {
@@ -114,129 +123,72 @@ export default function MaterialCostCalculator() {
 
   // Interpolated material $/sf and EPS $/ft^3
   const epsFt3 = useMemo(() => lerp(epsLow, epsHigh, t), [epsLow, epsHigh, t]);
-  const tileSf = useMemo(() => lerp(tileLow, tileHigh, t), [tileLow, tileHigh, t]);
-  const basecreteSf = useMemo(() => lerp(basecreteLow, basecreteHigh, t), [basecreteLow, basecreteHigh, t]);
-  const thinsetSf = useMemo(() => lerp(thinsetLow, thinsetHigh, t), [thinsetLow, thinsetHigh, t]);
-  const groutSf = useMemo(() => lerp(groutLow, groutHigh, t), [groutLow, groutHigh, t]);
+  const tileSf = useMemo(
+    () => lerp(tileLow, tileHigh, t),
+    [tileLow, tileHigh, t],
+  );
+  const basecreteSf = useMemo(
+    () => lerp(basecreteLow, basecreteHigh, t),
+    [basecreteLow, basecreteHigh, t],
+  );
+  const thinsetSf = useMemo(
+    () => lerp(thinsetLow, thinsetHigh, t),
+    [thinsetLow, thinsetHigh, t],
+  );
+  const groutSf = useMemo(
+    () => lerp(groutLow, groutHigh, t),
+    [groutLow, groutHigh, t],
+  );
 
-  const finishPerSf = useMemo(() => tileSf + basecreteSf + thinsetSf + groutSf, [tileSf, basecreteSf, thinsetSf, groutSf]);
+  const finishPerSf = useMemo(
+    () => tileSf + basecreteSf + thinsetSf + groutSf,
+    [tileSf, basecreteSf, thinsetSf, groutSf],
+  );
 
   // EPS per-sf by thickness
-  const epsFloorPerSf = useMemo(() => epsFt3 * floorThicknessFt, [epsFt3, floorThicknessFt]);
-  const epsWallPerSf = useMemo(() => epsFt3 * wallThicknessFt, [epsFt3, wallThicknessFt]);
+  const epsFloorPerSf = useMemo(
+    () => epsFt3 * floorThicknessFt,
+    [epsFt3, floorThicknessFt],
+  );
+  const epsWallPerSf = useMemo(
+    () => epsFt3 * wallThicknessFt,
+    [epsFt3, wallThicknessFt],
+  );
 
   // Per-sf totals (materials only)
-  const floorPerSf = useMemo(() => epsFloorPerSf + finishPerSf, [epsFloorPerSf, finishPerSf]);
-  const wallPerSf = useMemo(() => epsWallPerSf + finishPerSf, [epsWallPerSf, finishPerSf]);
+  const floorPerSf = useMemo(
+    () => epsFloorPerSf + finishPerSf,
+    [epsFloorPerSf, finishPerSf],
+  );
+  const wallPerSf = useMemo(
+    () => epsWallPerSf + finishPerSf,
+    [epsWallPerSf, finishPerSf],
+  );
 
   // Bench totals: EPS by volume + finishes by surface
-  const benchEpsTotal = useMemo(() => benchVolume * epsFt3, [benchVolume, epsFt3]);
-  const benchFinishTotal = useMemo(() => benchSurfaceArea * finishPerSf, [benchSurfaceArea, finishPerSf]);
+  const benchEpsTotal = useMemo(
+    () => benchVolume * epsFt3,
+    [benchVolume, epsFt3],
+  );
+  const benchFinishTotal = useMemo(
+    () => benchSurfaceArea * finishPerSf,
+    [benchSurfaceArea, finishPerSf],
+  );
   const benchTotal = benchEpsTotal + benchFinishTotal;
 
   // Project totals (materials pre-waste)
   const floorTotal = floorArea * floorPerSf;
   const wallTotal = wallArea * wallPerSf;
-  const materialSubtotal = floorTotal + wallTotal + benchTotal;
-
-  // === v2 Add-ons: Logistics, Labor, Soft Costs ===
-  // Scope toggles
-  const [scopeVessels, setScopeVessels] = useState(true); // include vessel materials
-  const [scopeEquipment, setScopeEquipment] = useState(true); // future: equipment packages
-  const [scopeInstallation, setScopeInstallation] = useState(true);
-  const [scopeFreight, setScopeFreight] = useState(true);
-
-  // Region & overhead multipliers
-  const [regionMultiplier, setRegionMultiplier] = useState(1.00); // adjust for HCOL markets
-  const [overheadPct, setOverheadPct] = useState(10); // company overhead on soft costs
-
-  // === FREIGHT/HANDLING/DELIVERY (combined) ===
-  // Base per-mile rate includes curbside delivery and a per-vessel handling fee
-  const [shipDistanceMi, setShipDistanceMi] = useState(800);
-  const [baseRatePerMile, setBaseRatePerMile] = useState(4.25); // includes curbside delivery
-  const [vesselCount, setVesselCount] = useState(4);
-  const [coldPlungeCount, setColdPlungeCount] = useState(3);
-  const [hotTubCount, setHotTubCount] = useState(1);
-  const [handlingPerVessel, setHandlingPerVessel] = useState(1000); // placeholder per Broc
-  const freightTotal = useMemo(() => {
-    if (!scopeFreight) return 0;
-    const linehaul = shipDistanceMi * baseRatePerMile;
-    const handling = vesselCount * handlingPerVessel;
-    return (linehaul + handling) * regionMultiplier;
-  }, [scopeFreight, shipDistanceMi, baseRatePerMile, vesselCount, handlingPerVessel, regionMultiplier]);
-
-  // === RIGGING FEES (only if installation is in scope) ===
-  const [includeRigging, setIncludeRigging] = useState(false);
-  const [riggingLumpSum, setRiggingLumpSum] = useState(3500);
-  const riggingTotal = useMemo(() => (scopeInstallation && includeRigging ? riggingLumpSum * regionMultiplier : 0), [scopeInstallation, includeRigging, riggingLumpSum, regionMultiplier]);
-
-  // Guardrail counts
-  const effectiveColdPlungeCount = useMemo(() => Math.min(coldPlungeCount, vesselCount), [coldPlungeCount, vesselCount]);
-
-  // === INSTALLATION – subscopes & averages ===
-  const [repOnsiteFee, setRepOnsiteFee] = useState(4000); // fixed base per project
-  const [instEquipPlumbing, setInstEquipPlumbing] = useState(true);
-  const [instEPSAssembly, setInstEPSAssembly] = useState(true);
-  const [instTileFinishes, setInstTileFinishes] = useState(true);
-  const [instHandrails, setInstHandrails] = useState(false);
-  const [instRefrigLines, setInstRefrigLines] = useState(true); // cold plunge only – toggle by project
-
-  // Adjustable averages (lump-sum style; can swap to productivity later per subscope)
-  const [avgEquipPlumbing, setAvgEquipPlumbing] = useState(15000);
-  const [epsWpRatePerSf, setEpsWpRatePerSf] = useState(40);
-  const [tileTurnkey, setTileTurnkey] = useState(true);
-  const [tileTurnkeyRate, setTileTurnkeyRate] = useState(60); // $/sf including materials & labor
-  const [avgTileFinishes, setAvgTileFinishes] = useState(tileTurnkeyRate * (floorArea + wallArea)); // default per-sf basis
-  const [avgHandrails, setAvgHandrails] = useState(1200);
-  const [avgRefrigLines, setAvgRefrigLines] = useState(1800);
-
-  const installationSubscopes = useMemo(() => {
-    if (!scopeInstallation) return 0;
-    let total = repOnsiteFee; // per project
-    if (instEquipPlumbing) total += avgEquipPlumbing * vesselCount; // per vessel
-    if (instEPSAssembly) total += epsWpRatePerSf * (floorArea + wallArea + benchSurfaceArea); // area-based @ $/sf
-    if (instTileFinishes) total += (tileTurnkey ? (tileTurnkeyRate * (floorArea + wallArea)) : avgTileFinishes); // area-based; turnkey includes materials & labor
-    if (instHandrails) total += avgHandrails * vesselCount; // per vessel
-    if (instRefrigLines) total += avgRefrigLines * effectiveColdPlungeCount; // per cold plunge only
-    return total * regionMultiplier;
-  }, [scopeInstallation, repOnsiteFee, instEquipPlumbing, instEPSAssembly, instTileFinishes, instHandrails, instRefrigLines, avgEquipPlumbing, epsWpRatePerSf, avgTileFinishes, avgHandrails, avgRefrigLines, vesselCount, coldPlungeCount, floorArea, wallArea, benchSurfaceArea, regionMultiplier]);
-
-  // === STARTUP / COMMISSIONING ===
-  // Keep flexible; we can research a typical average later.
-  const [startupLumpSum, setStartupLumpSum] = useState(3500); // placeholder average
-  const startupTotal = useMemo(() => (startupLumpSum) * regionMultiplier, [startupLumpSum, regionMultiplier]);
-
-  // === DESIGN / ENGINEERING ===
-  const [designBase, setDesignBase] = useState(25000); // includes DOH & permit-ready drawings
-  const [designMultiplier, setDesignMultiplier] = useState(1.0); // complexity factor
-  const designEngineeringTotal = useMemo(() => (designBase * designMultiplier) * regionMultiplier, [designBase, designMultiplier, regionMultiplier]);
-
-  // === WARRANTY RESERVE ===
-  const [warrantyPctOfMaterials, setWarrantyPctOfMaterials] = useState(1.5); // 1–2%
-  const materialSubtotal = scopeVessels ? (floorTotal + wallTotal + benchTotal) : 0;
-  const warrantyReserve = useMemo(() => materialSubtotal * (warrantyPctOfMaterials / 100), [materialSubtotal, warrantyPctOfMaterials]);
-
-  // Overhead applied to soft costs block
-  const softCostsSubtotal = freightTotal + riggingTotal + installationSubscopes + startupTotal + designEngineeringTotal + warrantyReserve;
-  const softCostsWithOverhead = useMemo(() => softCostsSubtotal * (1 + overheadPct / 100), [softCostsSubtotal, overheadPct]);
-
-  // Totals
-  const subtotalPreWaste = materialSubtotal + softCostsWithOverhead;
-  const overheadAmount = useMemo(() => softCostsWithOverhead - softCostsSubtotal, [softCostsWithOverhead, softCostsSubtotal]);
-  const wasteAmount = useMemo(() => (materialSubtotal + softCostsWithOverhead) * wastePct / 100, [materialSubtotal, softCostsWithOverhead, wastePct]);
-  const totalWithWaste = (subtotalPreWaste) * (1 + wastePct / 100);
-
-  // Useful KPIs
-  const totalSurfaceArea = floorArea + wallArea + benchSurfaceArea; // sf
-  const effectivePerSf = totalSurfaceArea > 0 ? totalWithWaste / totalSurfaceArea : 0;
 
   // === PRESETS ===
-  function applyPreset(preset: 'Economy' | 'Standard' | 'Premium' | 'Union-Site') {
+  function applyPreset(
+    preset: "Economy" | "Standard" | "Premium" | "Union-Site",
+  ) {
     switch (preset) {
-      case 'Economy':
+      case "Economy":
         setQuality(20);
         setRegionMultiplier(0.95);
-        setBaseRatePerMile(3.50);
+        setBaseRatePerMile(3.5);
         setHandlingPerVessel(800);
         setIncludeRigging(false);
         setAvgEquipPlumbing(12000);
@@ -249,9 +201,9 @@ export default function MaterialCostCalculator() {
         setDesignMultiplier(0.9);
         setOverheadPct(8);
         break;
-      case 'Standard':
+      case "Standard":
         setQuality(50);
-        setRegionMultiplier(1.00);
+        setRegionMultiplier(1.0);
         setBaseRatePerMile(4.25);
         setHandlingPerVessel(1000);
         setIncludeRigging(true);
@@ -265,10 +217,10 @@ export default function MaterialCostCalculator() {
         setDesignMultiplier(1.0);
         setOverheadPct(10);
         break;
-      case 'Premium':
+      case "Premium":
         setQuality(80);
         setRegionMultiplier(1.15);
-        setBaseRatePerMile(5.00);
+        setBaseRatePerMile(5.0);
         setHandlingPerVessel(1250);
         setIncludeRigging(true);
         setAvgEquipPlumbing(18000);
@@ -281,7 +233,7 @@ export default function MaterialCostCalculator() {
         setDesignMultiplier(1.2);
         setOverheadPct(12);
         break;
-      case 'Union-Site':
+      case "Union-Site":
         setQuality(60);
         setRegionMultiplier(1.25);
         setBaseRatePerMile(5.25);
@@ -302,15 +254,18 @@ export default function MaterialCostCalculator() {
 
   // Totals
   const subtotalPreWaste = materialSubtotal + softCostsWithOverhead;
-  const totalWithWaste = (subtotalPreWaste) * (1 + wastePct / 100);
+  const totalWithWaste = subtotalPreWaste * (1 + wastePct / 100);
 
   // Useful KPIs
-  const effectivePerSf = totalSurfaceArea > 0 ? totalWithWaste / totalSurfaceArea : 0;
+  const effectivePerSf =
+    totalSurfaceArea > 0 ? totalWithWaste / totalSurfaceArea : 0;
 
   return (
     <div className="mx-auto max-w-6xl p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">EPS Pool – Material & Soft-Cost Calculator (v2.1)</h1>
+        <h1 className="text-2xl font-bold">
+          EPS Pool – Material & Soft-Cost Calculator (v2.1)
+        </h1>
         <div className="text-sm text-gray-500">All costs in USD</div>
       </div>
 
@@ -320,19 +275,32 @@ export default function MaterialCostCalculator() {
           <div>
             <Label>Quality (Economy → Premium): {quality}</Label>
             <Slider value={quality} onChange={setQuality} />
-            <div className="text-xs text-gray-500 mt-1">Interpolates all low↔high ranges.</div>
+            <div className="text-xs text-gray-500 mt-1">
+              Interpolates all low↔high ranges.
+            </div>
           </div>
           <div>
             <Label>Waste %</Label>
             <div className="flex gap-3 items-center">
-              <Slider value={wastePct} onChange={setWastePct} min={0} max={20} />
+              <Slider
+                value={wastePct}
+                onChange={setWastePct}
+                min={0}
+                max={20}
+              />
               <NumberInput value={wastePct} onChange={setWastePct} step={0.5} />
             </div>
           </div>
           <div>
             <Label>Region Multiplier</Label>
-            <NumberInput value={regionMultiplier} onChange={setRegionMultiplier} step={0.01} />
-            <div className="text-xs text-gray-500 mt-1">e.g., 1.00 = baseline, 1.15 = HCOL market</div>
+            <NumberInput
+              value={regionMultiplier}
+              onChange={setRegionMultiplier}
+              step={0.01}
+            />
+            <div className="text-xs text-gray-500 mt-1">
+              e.g., 1.00 = baseline, 1.15 = HCOL market
+            </div>
           </div>
         </div>
 
@@ -347,7 +315,10 @@ export default function MaterialCostCalculator() {
           </div>
           <div>
             <Label>Bench Surface Area (sf)</Label>
-            <NumberInput value={benchSurfaceArea} onChange={setBenchSurfaceArea} />
+            <NumberInput
+              value={benchSurfaceArea}
+              onChange={setBenchSurfaceArea}
+            />
           </div>
           <div>
             <Label>Bench Volume (ft³)</Label>
@@ -355,12 +326,20 @@ export default function MaterialCostCalculator() {
           </div>
           <div>
             <Label>Floor Thickness (ft)</Label>
-            <NumberInput value={floorThicknessFt} onChange={setFloorThicknessFt} step={0.001} />
+            <NumberInput
+              value={floorThicknessFt}
+              onChange={setFloorThicknessFt}
+              step={0.001}
+            />
             <div className="text-xs text-gray-500 mt-1">8" = 0.667</div>
           </div>
           <div>
             <Label>Wall Thickness (ft)</Label>
-            <NumberInput value={wallThicknessFt} onChange={setWallThicknessFt} step={0.001} />
+            <NumberInput
+              value={wallThicknessFt}
+              onChange={setWallThicknessFt}
+              step={0.001}
+            />
             <div className="text-xs text-gray-500 mt-1">12" = 1.0</div>
           </div>
         </div>
@@ -378,10 +357,16 @@ export default function MaterialCostCalculator() {
               </div>
               <div>
                 <Label>High</Label>
-                <NumberInput value={epsHigh} onChange={setEpsHigh} step={0.01} />
+                <NumberInput
+                  value={epsHigh}
+                  onChange={setEpsHigh}
+                  step={0.01}
+                />
               </div>
             </div>
-            <div className="text-sm text-gray-500">Interpolated: ${fmt(epsFt3)}/ft³</div>
+            <div className="text-sm text-gray-500">
+              Interpolated: ${fmt(epsFt3)}/ft³
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -389,14 +374,24 @@ export default function MaterialCostCalculator() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Low</Label>
-                <NumberInput value={tileLow} onChange={setTileLow} step={0.01} />
+                <NumberInput
+                  value={tileLow}
+                  onChange={setTileLow}
+                  step={0.01}
+                />
               </div>
               <div>
                 <Label>High</Label>
-                <NumberInput value={tileHigh} onChange={setTileHigh} step={0.01} />
+                <NumberInput
+                  value={tileHigh}
+                  onChange={setTileHigh}
+                  step={0.01}
+                />
               </div>
             </div>
-            <div className="text-sm text-gray-500">Interpolated: ${fmt(tileSf)}/sf</div>
+            <div className="text-sm text-gray-500">
+              Interpolated: ${fmt(tileSf)}/sf
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -404,14 +399,24 @@ export default function MaterialCostCalculator() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Low</Label>
-                <NumberInput value={basecreteLow} onChange={setBasecreteLow} step={0.01} />
+                <NumberInput
+                  value={basecreteLow}
+                  onChange={setBasecreteLow}
+                  step={0.01}
+                />
               </div>
               <div>
                 <Label>High</Label>
-                <NumberInput value={basecreteHigh} onChange={setBasecreteHigh} step={0.01} />
+                <NumberInput
+                  value={basecreteHigh}
+                  onChange={setBasecreteHigh}
+                  step={0.01}
+                />
               </div>
             </div>
-            <div className="text-sm text-gray-500">Interpolated: ${fmt(basecreteSf)}/sf</div>
+            <div className="text-sm text-gray-500">
+              Interpolated: ${fmt(basecreteSf)}/sf
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -419,14 +424,24 @@ export default function MaterialCostCalculator() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Low</Label>
-                <NumberInput value={thinsetLow} onChange={setThinsetLow} step={0.01} />
+                <NumberInput
+                  value={thinsetLow}
+                  onChange={setThinsetLow}
+                  step={0.01}
+                />
               </div>
               <div>
                 <Label>High</Label>
-                <NumberInput value={thinsetHigh} onChange={setThinsetHigh} step={0.01} />
+                <NumberInput
+                  value={thinsetHigh}
+                  onChange={setThinsetHigh}
+                  step={0.01}
+                />
               </div>
             </div>
-            <div className="text-sm text-gray-500">Interpolated: ${fmt(thinsetSf)}/sf</div>
+            <div className="text-sm text-gray-500">
+              Interpolated: ${fmt(thinsetSf)}/sf
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -434,14 +449,24 @@ export default function MaterialCostCalculator() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Low</Label>
-                <NumberInput value={groutLow} onChange={setGroutLow} step={0.01} />
+                <NumberInput
+                  value={groutLow}
+                  onChange={setGroutLow}
+                  step={0.01}
+                />
               </div>
               <div>
                 <Label>High</Label>
-                <NumberInput value={groutHigh} onChange={setGroutHigh} step={0.01} />
+                <NumberInput
+                  value={groutHigh}
+                  onChange={setGroutHigh}
+                  step={0.01}
+                />
               </div>
             </div>
-            <div className="text-sm text-gray-500">Interpolated: ${fmt(groutSf)}/sf</div>
+            <div className="text-sm text-gray-500">
+              Interpolated: ${fmt(groutSf)}/sf
+            </div>
           </div>
         </div>
       </Card>
@@ -449,12 +474,33 @@ export default function MaterialCostCalculator() {
       <Card>
         <SectionTitle>Tile Setting & Finishes (Turnkey)</SectionTitle>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={tileTurnkey} onChange={e=>setTileTurnkey(e.target.checked)} /> Use turnkey rate (materials + labor)</label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={tileTurnkey}
+              onChange={(e) => setTileTurnkey(e.target.checked)}
+            />{" "}
+            Use turnkey rate (materials + labor)
+          </label>
           <div>
             <Label>Turnkey Rate ($/sf)</Label>
-            <NumberInput value={tileTurnkeyRate} onChange={setTileTurnkeyRate} />
+            <NumberInput
+              value={tileTurnkeyRate}
+              onChange={setTileTurnkeyRate}
+            />
           </div>
-          <div className="text-sm text-gray-600">Current applied: <span className="font-semibold">${fmt(tileTurnkeyRate)} / sf</span> × <span className="font-semibold">{fmt(floorArea + wallArea)} sf</span> = <span className="font-semibold">${fmt(tileTurnkeyRate * (floorArea + wallArea))}</span></div>
+          <div className="text-sm text-gray-600">
+            Current applied:{" "}
+            <span className="font-semibold">${fmt(tileTurnkeyRate)} / sf</span>{" "}
+            ×{" "}
+            <span className="font-semibold">
+              {fmt(floorArea + wallArea)} sf
+            </span>{" "}
+            ={" "}
+            <span className="font-semibold">
+              ${fmt(tileTurnkeyRate * (floorArea + wallArea))}
+            </span>
+          </div>
         </div>
       </Card>
 
@@ -462,17 +508,23 @@ export default function MaterialCostCalculator() {
         <SectionTitle>Per‑Square‑Foot (Materials)</SectionTitle>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-1">
-            <div className="text-gray-500">Finishes (Tile + BaseCrete + Thinset + Grout)</div>
+            <div className="text-gray-500">
+              Finishes (Tile + BaseCrete + Thinset + Grout)
+            </div>
             <div className="text-2xl font-semibold">${fmt(finishPerSf)}/sf</div>
           </div>
           <div className="space-y-1">
             <div className="text-gray-500">EPS – Floor</div>
-            <div className="text-2xl font-semibold">${fmt(epsFloorPerSf)}/sf</div>
+            <div className="text-2xl font-semibold">
+              ${fmt(epsFloorPerSf)}/sf
+            </div>
             <div className="text-xs text-gray-400">{`@ ${fmt(epsFt3)} $/ft³ × ${fmt(floorThicknessFt)} ft`}</div>
           </div>
           <div className="space-y-1">
             <div className="text-gray-500">EPS – Wall</div>
-            <div className="text-2xl font-semibold">${fmt(epsWallPerSf)}/sf</div>
+            <div className="text-2xl font-semibold">
+              ${fmt(epsWallPerSf)}/sf
+            </div>
             <div className="text-xs text-gray-400">{`@ ${fmt(epsFt3)} $/ft³ × ${fmt(wallThicknessFt)} ft`}</div>
           </div>
         </div>
@@ -482,19 +534,55 @@ export default function MaterialCostCalculator() {
       <Card>
         <SectionTitle>Scope Toggles</SectionTitle>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={scopeVessels} onChange={e=>setScopeVessels(e.target.checked)} /> Vessels (materials)</label>
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={scopeEquipment} onChange={e=>setScopeEquipment(e.target.checked)} /> Equipment</label>
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={scopeInstallation} onChange={e=>setScopeInstallation(e.target.checked)} /> Installation</label>
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={scopeFreight} onChange={e=>setScopeFreight(e.target.checked)} /> Freight/Delivery</label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={scopeVessels}
+              onChange={(e) => setScopeVessels(e.target.checked)}
+            />{" "}
+            Vessels (materials)
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={scopeEquipment}
+              onChange={(e) => setScopeEquipment(e.target.checked)}
+            />{" "}
+            Equipment
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={scopeInstallation}
+              onChange={(e) => setScopeInstallation(e.target.checked)}
+            />{" "}
+            Installation
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={scopeFreight}
+              onChange={(e) => setScopeFreight(e.target.checked)}
+            />{" "}
+            Freight/Delivery
+          </label>
         </div>
       </Card>
 
       <Card>
         <SectionTitle>Presets</SectionTitle>
         <div className="flex flex-wrap gap-2">
-          {(['Economy','Standard','Premium','Union-Site'] as const).map(p => (
-            <button key={p} onClick={()=>applyPreset(p)} className="px-3 py-2 rounded-xl bg-black text-white text-sm shadow">{p}</button>
-          ))}
+          {(["Economy", "Standard", "Premium", "Union-Site"] as const).map(
+            (p) => (
+              <button
+                key={p}
+                onClick={() => applyPreset(p)}
+                className="px-3 py-2 rounded-xl bg-black text-white text-sm shadow"
+              >
+                {p}
+              </button>
+            ),
+          )}
         </div>
       </Card>
 
@@ -507,7 +595,11 @@ export default function MaterialCostCalculator() {
           </div>
           <div>
             <Label>Base Rate ($/mi)</Label>
-            <NumberInput value={baseRatePerMile} onChange={setBaseRatePerMile} step={0.01} />
+            <NumberInput
+              value={baseRatePerMile}
+              onChange={setBaseRatePerMile}
+              step={0.01}
+            />
           </div>
           <div>
             <Label>Vessel Count</Label>
@@ -515,7 +607,10 @@ export default function MaterialCostCalculator() {
           </div>
           <div>
             <Label>Cold Plunge Count</Label>
-            <NumberInput value={coldPlungeCount} onChange={setColdPlungeCount} />
+            <NumberInput
+              value={coldPlungeCount}
+              onChange={setColdPlungeCount}
+            />
           </div>
           <div>
             <Label>Hot Tub Count</Label>
@@ -523,26 +618,43 @@ export default function MaterialCostCalculator() {
           </div>
           <div>
             <Label>Handling per Vessel ($)</Label>
-            <NumberInput value={handlingPerVessel} onChange={setHandlingPerVessel} />
+            <NumberInput
+              value={handlingPerVessel}
+              onChange={setHandlingPerVessel}
+            />
           </div>
         </div>
         {(coldPlungeCount > vesselCount || hotTubCount > vesselCount) && (
-          <div className="mt-2 text-xs text-red-600">Counts exceed total vessels; using capped values (cold plunges capped at {effectiveColdPlungeCount}).</div>
+          <div className="mt-2 text-xs text-red-600">
+            Counts exceed total vessels; using capped values (cold plunges
+            capped at {effectiveColdPlungeCount}).
+          </div>
         )}
-        <div className="mt-3 text-sm text-gray-600">Freight Total: <span className="font-semibold">${fmt(freightTotal)}</span> <span className="text-gray-400">(Includes curbside delivery + per‑vessel handling)</span></div> <span className="font-semibold">${fmt(freightTotal)}</span> <span className="text-gray-400">(Includes curbside delivery + per‑vessel handling)</span></div> <span className="font-semibold">${fmt(freightTotal)}</span> <span className="text-gray-400">(Includes curbside delivery + per‑vessel handling)</span></div>
+
+        <div className="mt-3 text-sm text-gray-600">
+          Freight Total:{" "}
+          <span className="font-semibold">${fmt(freightTotal)}</span>{" "}
+          <span className="text-gray-400">
+            (Includes curbside delivery + per-vessel handling)
+          </span>
+        </div>
       </Card>
 
       <Card>
         <SectionTitle>Handling & Warehouse</SectionTitle>
         <div className="text-sm text-gray-600">
-          This cost is consolidated into the <strong>Freight / Handling / Delivery (Combined)</strong> section via the per‑vessel handling fee.
+          This cost is consolidated into the{" "}
+          <strong>Freight / Handling / Delivery (Combined)</strong> section via
+          the per‑vessel handling fee.
         </div>
       </Card>
 
       <Card>
         <SectionTitle>Delivery (Last Mile)</SectionTitle>
         <div className="text-sm text-gray-600">
-          Last‑mile delivery is included in the <strong>Freight / Handling / Delivery (Combined)</strong> model (base $/mile covers curbside delivery).
+          Last‑mile delivery is included in the{" "}
+          <strong>Freight / Handling / Delivery (Combined)</strong> model (base
+          $/mile covers curbside delivery).
         </div>
       </Card>
 
@@ -551,7 +663,13 @@ export default function MaterialCostCalculator() {
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <Label>Mode</Label>
-            <select className="w-full rounded-xl border px-3 py-2" value={installMode} onChange={(e) => setInstallMode(e.target.value as 'productivity' | 'hours')}>
+            <select
+              className="w-full rounded-xl border px-3 py-2"
+              value={installMode}
+              onChange={(e) =>
+                setInstallMode(e.target.value as "productivity" | "hours")
+              }
+            >
               <option value="productivity">By Productivity</option>
               <option value="hours">By Hours</option>
             </select>
@@ -564,11 +682,14 @@ export default function MaterialCostCalculator() {
             <Label>Labor Rate ($/hr)</Label>
             <NumberInput value={laborRate} onChange={setLaborRate} />
           </div>
-          {installMode === 'productivity' ? (
+          {installMode === "productivity" ? (
             <>
               <div>
                 <Label>Productivity (sf / crew‑hr)</Label>
-                <NumberInput value={prodSfPerCrewHour} onChange={setProdSfPerCrewHour} />
+                <NumberInput
+                  value={prodSfPerCrewHour}
+                  onChange={setProdSfPerCrewHour}
+                />
               </div>
               <div>
                 <Label>Total Surface Area (sf)</Label>
@@ -578,38 +699,67 @@ export default function MaterialCostCalculator() {
           ) : (
             <div className="col-span-2">
               <Label>Install Hours (override)</Label>
-              <NumberInput value={installHoursOverride} onChange={setInstallHoursOverride} />
+              <NumberInput
+                value={installHoursOverride}
+                onChange={setInstallHoursOverride}
+              />
             </div>
           )}
         </div>
-        <div className="mt-3 text-sm text-gray-600">Install Labor Total: <span className="font-semibold">${fmt(installLaborTotal)}</span> <span className="text-gray-400">(Crew-hours: {fmt(installCrewHours)})</span></div>
+        <div className="mt-3 text-sm text-gray-600">
+          Install Labor Total:{" "}
+          <span className="font-semibold">${fmt(installLaborTotal)}</span>{" "}
+          <span className="text-gray-400">
+            (Crew-hours: {fmt(installCrewHours)})
+          </span>
+        </div>
       </Card>
 
       <Card>
         <SectionTitle>Applied Install Rates (Readout)</SectionTitle>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
-            <span className="text-gray-600">Equipment & interconnecting plumbing</span>
-            <span className="font-semibold">${fmt(avgEquipPlumbing)} / vessel × {vesselCount} = ${fmt(avgEquipPlumbing * vesselCount)}</span>
+            <span className="text-gray-600">
+              Equipment & interconnecting plumbing
+            </span>
+            <span className="font-semibold">
+              ${fmt(avgEquipPlumbing)} / vessel × {vesselCount} = $
+              {fmt(avgEquipPlumbing * vesselCount)}
+            </span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-600">EPS assembly & waterproofing</span>
-            <span className="font-semibold">${fmt(epsWpRatePerSf)} / sf × {fmt(floorArea + wallArea + benchSurfaceArea)} sf = ${fmt(epsWpRatePerSf * (floorArea + wallArea + benchSurfaceArea))}</span>
+            <span className="font-semibold">
+              ${fmt(epsWpRatePerSf)} / sf ×{" "}
+              {fmt(floorArea + wallArea + benchSurfaceArea)} sf = $
+              {fmt(epsWpRatePerSf * (floorArea + wallArea + benchSurfaceArea))}
+            </span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-600">Tile setting (turnkey)</span>
-            <span className="font-semibold">{tileTurnkey ? `$${fmt(tileTurnkeyRate)} / sf × ${fmt(floorArea + wallArea)} sf = $${fmt(tileTurnkeyRate * (floorArea + wallArea))}` : `$${fmt(avgTileFinishes)} (custom)`}</span>
+            <span className="font-semibold">
+              {tileTurnkey
+                ? `$${fmt(tileTurnkeyRate)} / sf × ${fmt(floorArea + wallArea)} sf = $${fmt(tileTurnkeyRate * (floorArea + wallArea))}`
+                : `$${fmt(avgTileFinishes)} (custom)`}
+            </span>
           </div>
           {instHandrails && (
             <div className="flex justify-between">
               <span className="text-gray-600">Handrails</span>
-              <span className="font-semibold">${fmt(avgHandrails)} / vessel × {vesselCount} = ${fmt(avgHandrails * vesselCount)}</span>
+              <span className="font-semibold">
+                ${fmt(avgHandrails)} / vessel × {vesselCount} = $
+                {fmt(avgHandrails * vesselCount)}
+              </span>
             </div>
           )}
           {instRefrigLines && (
             <div className="flex justify-between">
               <span className="text-gray-600">Refrigeration line sets</span>
-              <span className="font-semibold">${fmt(avgRefrigLines)} / cold plunge × {effectiveColdPlungeCount} = ${fmt(avgRefrigLines * effectiveColdPlungeCount)}</span>
+              <span className="font-semibold">
+                ${fmt(avgRefrigLines)} / cold plunge ×{" "}
+                {effectiveColdPlungeCount} = $
+                {fmt(avgRefrigLines * effectiveColdPlungeCount)}
+              </span>
             </div>
           )}
           <div className="flex justify-between border-t pt-2">
@@ -643,7 +793,10 @@ export default function MaterialCostCalculator() {
             <NumberInput value={flightCost} onChange={setFlightCost} />
           </div>
         </div>
-        <div className="mt-3 text-sm text-gray-600">Startup Total: <span className="font-semibold">${fmt(startupTotal)}</span></div>
+        <div className="mt-3 text-sm text-gray-600">
+          Startup Total:{" "}
+          <span className="font-semibold">${fmt(startupTotal)}</span>
+        </div>
       </Card>
 
       <Card>
@@ -670,7 +823,10 @@ export default function MaterialCostCalculator() {
             <NumberInput value={permitFees} onChange={setPermitFees} />
           </div>
         </div>
-        <div className="mt-3 text-sm text-gray-600">Design + Engineering Total: <span className="font-semibold">${fmt(designEngineeringTotal)}</span></div>
+        <div className="mt-3 text-sm text-gray-600">
+          Design + Engineering Total:{" "}
+          <span className="font-semibold">${fmt(designEngineeringTotal)}</span>
+        </div>
       </Card>
 
       <Card>
@@ -678,15 +834,31 @@ export default function MaterialCostCalculator() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <Label>Warranty % of Materials</Label>
-            <NumberInput value={warrantyPctOfMaterials} onChange={setWarrantyPctOfMaterials} step={0.1} />
+            <NumberInput
+              value={warrantyPctOfMaterials}
+              onChange={setWarrantyPctOfMaterials}
+              step={0.1}
+            />
           </div>
           <div>
             <Label>Overhead % on Soft Costs</Label>
-            <NumberInput value={overheadPct} onChange={setOverheadPct} step={0.5} />
+            <NumberInput
+              value={overheadPct}
+              onChange={setOverheadPct}
+              step={0.5}
+            />
           </div>
-          <div className="col-span-2 text-sm text-gray-600 flex items-end">Soft-costs subtotal (pre‑OH): <span className="ml-1 font-semibold">${fmt(softCostsSubtotal)}</span></div>
+          <div className="col-span-2 text-sm text-gray-600 flex items-end">
+            Soft-costs subtotal (pre‑OH):{" "}
+            <span className="ml-1 font-semibold">
+              ${fmt(softCostsSubtotal)}
+            </span>
+          </div>
         </div>
-        <div className="mt-3 text-sm text-gray-600">Soft-costs w/ Overhead: <span className="font-semibold">${fmt(softCostsWithOverhead)}</span></div>
+        <div className="mt-3 text-sm text-gray-600">
+          Soft-costs w/ Overhead:{" "}
+          <span className="font-semibold">${fmt(softCostsWithOverhead)}</span>
+        </div>
       </Card>
 
       {/* Totals */}
@@ -694,19 +866,50 @@ export default function MaterialCostCalculator() {
         <SectionTitle>Scope Summary</SectionTitle>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 text-sm">
           <div className="p-3 rounded-xl bg-gray-50">
-            <div className="flex justify-between"><span className="text-gray-600">Materials (Vessels)</span><span className="font-semibold">${fmt(materialSubtotal)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-600">Freight/Handling/Delivery</span><span className="font-semibold">${fmt(freightTotal)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-600">Rigging</span><span className="font-semibold">${fmt(riggingTotal)}</span></div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Materials (Vessels)</span>
+              <span className="font-semibold">${fmt(materialSubtotal)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Freight/Handling/Delivery</span>
+              <span className="font-semibold">${fmt(freightTotal)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Rigging</span>
+              <span className="font-semibold">${fmt(riggingTotal)}</span>
+            </div>
           </div>
           <div className="p-3 rounded-xl bg-gray-50">
-            <div className="flex justify-between"><span className="text-gray-600">Installation (subscopes)</span><span className="font-semibold">${fmt(installationSubscopes)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-600">Startup & Commissioning</span><span className="font-semibold">${fmt(startupTotal)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-600">Design & Engineering</span><span className="font-semibold">${fmt(designEngineeringTotal)}</span></div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Installation (subscopes)</span>
+              <span className="font-semibold">
+                ${fmt(installationSubscopes)}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Startup & Commissioning</span>
+              <span className="font-semibold">${fmt(startupTotal)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Design & Engineering</span>
+              <span className="font-semibold">
+                ${fmt(designEngineeringTotal)}
+              </span>
+            </div>
           </div>
           <div className="p-3 rounded-xl bg-gray-50">
-            <div className="flex justify-between"><span className="text-gray-600">Warranty Reserve</span><span className="font-semibold">${fmt(warrantyReserve)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-600">Overhead on Soft Costs</span><span className="font-semibold">${fmt(overheadAmount)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-600">Waste</span><span className="font-semibold">${fmt(wasteAmount)}</span></div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Warranty Reserve</span>
+              <span className="font-semibold">${fmt(warrantyReserve)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Overhead on Soft Costs</span>
+              <span className="font-semibold">${fmt(overheadAmount)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Waste</span>
+              <span className="font-semibold">${fmt(wasteAmount)}</span>
+            </div>
           </div>
         </div>
       </Card>
@@ -720,17 +923,26 @@ export default function MaterialCostCalculator() {
           </div>
           <div>
             <div className="text-gray-500">Soft Costs (w/ OH)</div>
-            <div className="text-3xl font-bold">${fmt(softCostsWithOverhead)}</div>
+            <div className="text-3xl font-bold">
+              ${fmt(softCostsWithOverhead)}
+            </div>
           </div>
           <div>
             <div className="text-gray-500">Waste ({fmt(wastePct)}%)</div>
-            <div className="text-3xl font-bold">${fmt((materialSubtotal + softCostsWithOverhead) * wastePct / 100)}</div>
+            <div className="text-3xl font-bold">
+              $
+              {fmt(
+                ((materialSubtotal + softCostsWithOverhead) * wastePct) / 100,
+              )}
+            </div>
           </div>
         </div>
         <div className="mt-4 p-4 bg-gray-50 rounded-xl flex items-center justify-between">
           <div>
             <div className="text-gray-500">Grand Total (incl. Waste)</div>
-            <div className="text-4xl font-extrabold">${fmt(totalWithWaste)}</div>
+            <div className="text-4xl font-extrabold">
+              ${fmt(totalWithWaste)}
+            </div>
           </div>
           <div className="text-right">
             <div className="text-gray-500">Effective $/sf (incl. Waste)</div>
@@ -742,10 +954,22 @@ export default function MaterialCostCalculator() {
       <Card>
         <SectionTitle>Export / Notes</SectionTitle>
         <ul className="list-disc pl-6 text-sm text-gray-600 space-y-1">
-          <li>Use the global <strong>Quality</strong> slider to move from economy to premium specifications.</li>
-          <li>Region multiplier scales freight, handling, delivery, labor, startup, and design/engineering.</li>
-          <li>Installation can be computed by productivity (sf/crew‑hour) or direct hours.</li>
-          <li>Warranty reserve is applied as a % of materials; overhead is applied on soft‑costs.</li>
+          <li>
+            Use the global <strong>Quality</strong> slider to move from economy
+            to premium specifications.
+          </li>
+          <li>
+            Region multiplier scales freight, handling, delivery, labor,
+            startup, and design/engineering.
+          </li>
+          <li>
+            Installation can be computed by productivity (sf/crew‑hour) or
+            direct hours.
+          </li>
+          <li>
+            Warranty reserve is applied as a % of materials; overhead is applied
+            on soft‑costs.
+          </li>
           <li>KPIs: see Effective $/sf and Grand Total for fast quoting.</li>
         </ul>
       </Card>

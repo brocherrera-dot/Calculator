@@ -1,21 +1,16 @@
-cat > src/App.tsx <<'TSX'
 import React from "react";
 import EpsPoolCalculator from "./components/EpsPoolCalculator";
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="px-6 py-4 border-b bg-white">
-        <h1 className="text-xl font-semibold">EPS Pool Calculator</h1>
-        <p className="text-sm text-gray-500">
-          v2.1 — scopes, presets, turnkey tile, install readout
-        </p>
+    <div style={{ minHeight: "100vh", background: "#f5f5f5" }}>
+      <header style={{ padding: "16px 24px", borderBottom: "1px solid #e5e7eb", background: "#fff" }}>
+        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>EPS Pool Calculator</h1>
+        <div style={{ fontSize: 12, color: "#6b7280" }}>v2.1 — scopes, presets, turnkey tile, install readout</div>
       </header>
-
-      <main className="p-4 md:p-6">
+      <main style={{ padding: 16 }}>
         <EpsPoolCalculator />
       </main>
     </div>
   );
 }
-TSX

@@ -1,12 +1,12 @@
 import React, { useMemo, useState } from "react";
 
 // === Quick Notes ===
-// - This is a single-file React app you can deploy to Vercel/Netlify and embed in Notion via /embed.
-// - No external data; Tailwind classes used (Notion embed doesn't require Tailwind runtime).
-// - All numbers USD. Percent inputs accept e.g. 7.5 for 7.5%.
+// - Single-file React app you can deploy to Vercel and embed in Notion.
+// - Tailwind via CDN in index.html (no local CSS import needed).
+// - Percent inputs accept e.g. 7.5 for 7.5%.
 // - Geometry multiplier = Π(1 + adder) for each selected feature.
-// - Freight is allocated by Adjusted SA share; Rigging split evenly; MEP hours split evenly.
-// - Equipment packages use editable per-vessel-type totals for simplicity (you can expand to line-item BOMs later).
+// - Freight allocated by Adjusted SA share; Rigging split evenly; MEP hours split evenly.
+// - Equipment packages use editable per-vessel-type totals.
 
 // -------- Types --------
 interface Rates {
@@ -171,9 +171,15 @@ const DEFAULT_VESSELS: VesselRow[] = [
 ];
 
 // -------- Helpers --------
-function round(v: number, d = 2) {
-  return Math.round(v * 10 ** d) / 10 ** d;
-}
+const round = (v: number, d = 2) =>
+  Math.round((v + Number.EPSILON) * 10 ** d) / 10 ** d;
+
+const fmtUSD = (v: number) =>
+  new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(v || 0);
 
 function totalInternalSA(lengthFt: number, widthFt: number, depthFt: number) {
   const floor = lengthFt * widthFt;
@@ -201,6 +207,66 @@ function getPackageTotal(
   return pkg?.totals[vesselType] ?? 0;
 }
 
+// ---- Typed, safer inputs ----
+function parseNum(input: string, fallback = 0) {
+  const n = Number(input);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+type NumberInputProps = {
+  label: string;
+  value: number;
+  onChange: (n: number) => void;
+  step?: number;
+  min?: number;
+  suffix?: string;
+};
+
+const NumberInput: React.FC<NumberInputProps> = ({
+  label,
+  value,
+  onChange,
+  step = 0.01,
+  min = 0,
+  suffix = "",
+}) => (
+  <label className="flex items-center justify-between gap-3 py-1">
+    <span className="text-sm text-gray-700">{label}</span>
+    <div className="flex items-center gap-2">
+      <input
+        type="number"
+        inputMode="decimal"
+        className="w-36 rounded border px-2 py-1"
+        min={min}
+        step={step}
+        value={Number.isFinite(value) ? value : 0}
+        onChange={(e) => onChange(parseNum(e.currentTarget.value, 0))}
+      />
+      {suffix && <span className="text-sm text-gray-500">{suffix}</span>}
+    </div>
+  </label>
+);
+
+type CheckboxProps = {
+  label?: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+};
+
+const Checkbox: React.FC<CheckboxProps> = ({ label, checked, onChange }) => (
+  <label className="inline-flex items-center gap-2">
+    <input
+      type="checkbox"
+      className="h-4 w-4"
+      checked={checked}
+      onChange={(e) => onChange(e.currentTarget.checked)}
+    />
+    {label && <span className="text-sm">{label}</span>}
+  </label>
+);
+
+const Money: React.FC<{ v: number }> = ({ v }) => <span>{fmtUSD(v)}</span>;
+
 // -------- Main Component --------
 export default function App() {
   const [rates, setRates] = useState<Rates>(DEFAULT_RATES);
@@ -218,6 +284,8 @@ export default function App() {
     }, 0);
 
     const vcount = rows.length || 1;
+    const freightTotal =
+      rates.freightPerMile * inputs.distanceMiles + rates.freightFixed;
 
     return rows.map((v) => {
       const sa = totalInternalSA(v.lengthFt, v.widthFt, v.depthFt);
@@ -228,6 +296,7 @@ export default function App() {
         adjustedSA *
         (rates.shellPerSqft + rates.tileLaborPerSqft) *
         rates.regionalMaterialMult;
+
       const equipBase =
         getPackageTotal(v.packageName, v.type, packages) *
         rates.regionalMaterialMult;
@@ -236,10 +305,9 @@ export default function App() {
         (inputs.crewHoursMEP / vcount) *
         rates.mepLaborPerHr *
         rates.regionalLaborMult;
+
       const controls = rates.controlsPanelEach * rates.regionalMaterialMult;
 
-      const freightTotal =
-        rates.freightPerMile * inputs.distanceMiles + rates.freightFixed;
       const freight =
         totalAdjSA > 0 ? freightTotal * (adjustedSA / totalAdjSA) : 0;
 
@@ -247,6 +315,7 @@ export default function App() {
 
       const directs =
         shellCost + equipBase + mepLabor + controls + freight + rigging;
+
       const contingency = directs * (rates.contingencyPct / 100);
       const subtotalWithCont = directs + contingency;
 
@@ -279,45 +348,6 @@ export default function App() {
     return { directs, contingency, subtotal, ohpPct: rates.ohpPct, ohp, grand };
   }, [vesselCalcs, rates.ohpPct]);
 
-  // -------- UI helpers --------
-  const NumberInput = ({
-    label,
-    value,
-    onChange,
-    step = 0.01,
-    min = 0,
-    suffix = "",
-  }: any) => (
-    <label className="flex items-center justify-between gap-3 py-1">
-      <span className="text-sm text-gray-700">{label}</span>
-      <input
-        type="number"
-        className="w-36 rounded border px-2 py-1"
-        min={min}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value || "0"))}
-      />
-      {suffix && <span className="text-sm text-gray-500">{suffix}</span>}
-    </label>
-  );
-
-  const Checkbox = ({ label, checked, onChange }: any) => (
-    <label className="inline-flex items-center gap-2">
-      <input
-        type="checkbox"
-        className="h-4 w-4"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      <span className="text-sm">{label}</span>
-    </label>
-  );
-
-  const Money = ({ v }: { v: number }) => (
-    <span>${round(v).toLocaleString()}</span>
-  );
-
   // -------- Render --------
   return (
     <div className="min-h-screen w-full bg-white text-gray-900">
@@ -329,7 +359,7 @@ export default function App() {
             </h1>
             <p className="text-sm text-gray-600">
               Total internal surface area + geometry multipliers • Package-based
-              equipment • Separate contingency & OH&P
+              equipment • Separate contingency &amp; OH&amp;P
             </p>
           </div>
         </header>
@@ -386,7 +416,7 @@ export default function App() {
           </div>
 
           <div className="rounded-2xl border p-4 shadow-sm">
-            <h2 className="mb-2 text-lg font-medium">Rates & Markups</h2>
+            <h2 className="mb-2 text-lg font-medium">Rates &amp; Markups</h2>
             <NumberInput
               label="Shell (EPS+membrane+tile) $/ft²"
               value={rates.shellPerSqft}
@@ -448,7 +478,7 @@ export default function App() {
             <h2 className="mb-2 text-lg font-medium">
               Equipment Packages (editable totals)
             </h2>
-            {packages.map((p, idx) => (
+            {packages.map((p) => (
               <div key={p.name} className="mb-2 rounded-lg border p-2">
                 <div className="mb-1 text-sm font-medium">{p.name}</div>
                 {(Object.keys(p.totals) as VesselType[]).map((vt) => (
@@ -462,7 +492,7 @@ export default function App() {
                       className="w-32 rounded border px-2 py-1"
                       value={p.totals[vt]}
                       onChange={(e) => {
-                        const v = parseFloat(e.target.value || "0");
+                        const v = parseNum(e.currentTarget.value, 0);
                         setPackages((prev) =>
                           prev.map((pp) =>
                             pp.name === p.name
@@ -538,7 +568,7 @@ export default function App() {
                           className="w-40 rounded border px-2 py-1"
                           value={r.name}
                           onChange={(e) => {
-                            const v = e.target.value;
+                            const v = e.currentTarget.value;
                             setRows(
                               rows.map((x) =>
                                 x.id === r.id ? { ...x, name: v } : x
@@ -552,7 +582,8 @@ export default function App() {
                           className="rounded border px-2 py-1"
                           value={r.type}
                           onChange={(e) => {
-                            const v = e.target.value as VesselType;
+                            const v = e.currentTarget
+                              .value as unknown as VesselType;
                             setRows(
                               rows.map((x) =>
                                 x.id === r.id ? { ...x, type: v } : x
@@ -570,7 +601,7 @@ export default function App() {
                           className="w-20 rounded border px-2 py-1"
                           value={r.lengthFt}
                           onChange={(e) => {
-                            const v = parseFloat(e.target.value || "0");
+                            const v = parseNum(e.currentTarget.value, 0);
                             setRows(
                               rows.map((x) =>
                                 x.id === r.id ? { ...x, lengthFt: v } : x
@@ -585,7 +616,7 @@ export default function App() {
                           className="w-20 rounded border px-2 py-1"
                           value={r.widthFt}
                           onChange={(e) => {
-                            const v = parseFloat(e.target.value || "0");
+                            const v = parseNum(e.currentTarget.value, 0);
                             setRows(
                               rows.map((x) =>
                                 x.id === r.id ? { ...x, widthFt: v } : x
@@ -600,7 +631,7 @@ export default function App() {
                           className="w-20 rounded border px-2 py-1"
                           value={r.depthFt}
                           onChange={(e) => {
-                            const v = parseFloat(e.target.value || "0");
+                            const v = parseNum(e.currentTarget.value, 0);
                             setRows(
                               rows.map((x) =>
                                 x.id === r.id ? { ...x, depthFt: v } : x
@@ -610,90 +641,72 @@ export default function App() {
                         />
                       </td>
                       <td className="py-1 pr-3">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={r.hasSteps}
-                          onChange={(e) =>
+                          onChange={(next) =>
                             setRows(
                               rows.map((x) =>
-                                x.id === r.id
-                                  ? { ...x, hasSteps: e.target.checked }
-                                  : x
+                                x.id === r.id ? { ...x, hasSteps: next } : x
                               )
                             )
                           }
                         />
                       </td>
                       <td className="py-1 pr-3">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={r.hasBench}
-                          onChange={(e) =>
+                          onChange={(next) =>
                             setRows(
                               rows.map((x) =>
-                                x.id === r.id
-                                  ? { ...x, hasBench: e.target.checked }
-                                  : x
+                                x.id === r.id ? { ...x, hasBench: next } : x
                               )
                             )
                           }
                         />
                       </td>
                       <td className="py-1 pr-3">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={r.hasLevels}
-                          onChange={(e) =>
+                          onChange={(next) =>
                             setRows(
                               rows.map((x) =>
-                                x.id === r.id
-                                  ? { ...x, hasLevels: e.target.checked }
-                                  : x
+                                x.id === r.id ? { ...x, hasLevels: next } : x
                               )
                             )
                           }
                         />
                       </td>
                       <td className="py-1 pr-3">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={r.hasRadius}
-                          onChange={(e) =>
+                          onChange={(next) =>
                             setRows(
                               rows.map((x) =>
-                                x.id === r.id
-                                  ? { ...x, hasRadius: e.target.checked }
-                                  : x
+                                x.id === r.id ? { ...x, hasRadius: next } : x
                               )
                             )
                           }
                         />
                       </td>
                       <td className="py-1 pr-3">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={r.hasNiches}
-                          onChange={(e) =>
+                          onChange={(next) =>
                             setRows(
                               rows.map((x) =>
-                                x.id === r.id
-                                  ? { ...x, hasNiches: e.target.checked }
-                                  : x
+                                x.id === r.id ? { ...x, hasNiches: next } : x
                               )
                             )
                           }
                         />
                       </td>
                       <td className="py-1 pr-3">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={r.hasPattern}
-                          onChange={(e) =>
+                          onChange={(next) =>
                             setRows(
                               rows.map((x) =>
-                                x.id === r.id
-                                  ? { ...x, hasPattern: e.target.checked }
-                                  : x
+                                x.id === r.id ? { ...x, hasPattern: next } : x
                               )
                             )
                           }
@@ -704,7 +717,7 @@ export default function App() {
                           className="rounded border px-2 py-1"
                           value={r.packageName}
                           onChange={(e) => {
-                            const v = e.target.value;
+                            const v = e.currentTarget.value;
                             setRows(
                               rows.map((x) =>
                                 x.id === r.id ? { ...x, packageName: v } : x
@@ -742,7 +755,7 @@ export default function App() {
 
         {/* Per-vessel cost breakdown */}
         <section className="mb-6 rounded-2xl border p-4 shadow-sm">
-          <h2 className="mb-2 text-lg font-medium">Per‑Vessel Breakdown</h2>
+          <h2 className="mb-2 text-lg font-medium">Per-Vessel Breakdown</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>

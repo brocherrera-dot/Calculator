@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
-
+import EpsPoolCalculator from "./components/EpsPoolCalculator";
+export default function App() { return <EpsPoolCalculator />; }
 // === Quick Notes ===
 // - Single-file React app you can deploy to Vercel and embed in Notion.
 // - Tailwind via CDN in index.html (no local CSS import needed).

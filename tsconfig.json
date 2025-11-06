@@ -1,16 +1,14 @@
 {
-    "include": [
-        "./src/**/*"
-    ],
-    "compilerOptions": {
-        "noImplicitAny": false,
-"skipLibCheck": true
-        "strict": true,
-        "esModuleInterop": true,
-        "lib": [
-            "dom",
-            "es2015"
-        ],
-        "jsx": "react-jsx"
-    }
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["DOM", "ES2020"],
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "noEmit": true
+  },
+  "include": ["src", "index.html"]
 }

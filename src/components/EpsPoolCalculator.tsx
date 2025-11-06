@@ -251,7 +251,7 @@ export default function MaterialCostCalculator() {
         break;
     }
   }
-
+const materialSubtotal = scopeVessels ? (floorTotal + wallTotal + benchTotal) : 0;
   // Totals
   const subtotalPreWaste = materialSubtotal + softCostsWithOverhead;
   const totalWithWaste = subtotalPreWaste * (1 + wastePct / 100);

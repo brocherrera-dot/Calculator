@@ -434,11 +434,17 @@ export default function MaterialCostCalculator() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Low</Label>
-                <NumberInput value={groutLow} onChange={setGroutLow} step={0.01} />
-              </div>
-              <div>
-                <Label>High</Label>
-                <NumberInput value={groutHigh} onChange={setGroutHigh} step={0.01} />
+                        {(coldPlungeCount > vesselCount || hotTubCount > vesselCount) && (
+          <div className="mt-2 text-xs text-red-600">
+            Counts exceed total vessels; using capped values (cold plunges capped at {effectiveColdPlungeCount}).
+          </div>
+        )}
+
+        <div className="mt-3 text-sm text-gray-600">
+          Freight Total: <span className="font-semibold">${fmt(freightTotal)}</span>{" "}
+          <span className="text-gray-400">(Includes curbside delivery + per-vessel handling)</span>
+        </div>
+      </Card>
               </div>
             </div>
             <div className="text-sm text-gray-500">Interpolated: ${fmt(groutSf)}/sf</div>

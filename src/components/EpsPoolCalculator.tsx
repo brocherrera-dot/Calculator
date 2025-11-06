@@ -13,58 +13,132 @@ interface Vessel {
   id: string;
   type: VesselType;
   name: string;
-  length_ft: number; // inside water footprint
-  width_ft: number;  // inside water footprint
+  length_ft: number;
+  width_ft: number;
   waterDepth_ft: number;
-  benchSf: number;   // optional bench/step surfaces
-  extraSf: number;   // any other surfaces you want to add
-  handrails: number; // count
-  refrigerationLine: boolean; // cold plunge only
-  jets: number;      // hot tub: number of jets (install complexity placeholder)
-  equipmentPackageKey: string; // key into equipment packages map
+  benchSf: number;
+  extraSf: number;
+  handrails: number;
+  refrigerationLine: boolean;
+  jets: number;
+  equipmentPackageKey: string;
 }
 
 interface EquipmentLineItem {
   label: string;
-  cost: number; // USD
+  cost: number;
 }
 
 interface EquipmentPackage {
   key: string;
   label: string;
-  appliesTo: VesselType[];     // which vessel types it fits
-  items: EquipmentLineItem[];  // editable line items
+  appliesTo: VesselType[];
+  items: EquipmentLineItem[]; // per-vessel items
 }
 
-/** ---------- defaults ---------- */
+/** ---------- DEFAULT PACKAGES (updated) ---------- */
+/** Pricing ladder assumptions (editable in UI):
+ *  - Only chiller scales; other items mostly stable except pump/filter scales on larger tiers.
+ *  - Includes per-vessel chemical dosing/monitoring controller.
+ */
 const DEFAULT_PACKAGES: EquipmentPackage[] = [
+  // --- Cold Plunge tiers by bather load ---
   {
-    key: "cp-standard",
-    label: "CP Standard (1-2 person)",
+    key: "cp-1-2",
+    label: "CP 1–2 Person",
     appliesTo: ["Cold Plunge"],
     items: [
-      { label: "Chiller 1-1.5HP + controller", cost: 5200 },
+      { label: "Chiller 1.5-ton + controller", cost: 13000 },
       { label: "AOP / UV sanitization", cost: 1800 },
-      { label: "Pump & filter (cart)", cost: 1500 },
-      { label: "Valves, unions, fittings", cost: 900 },
-      { label: "Sensors / controls panel", cost: 1300 },
+      { label: "Pump & filter (upsized)", cost: 3000 }, // ~2× prior
+      { label: "Valves, unions, fittings", cost: 1100 },
+      { label: "Sensors / control panel", cost: 1500 },
+      { label: "Chemical dosing & monitoring controller", cost: 2200 },
     ],
   },
   {
-    key: "cp-pro",
-    label: "CP Pro (3-4 person)",
+    key: "cp-3-4",
+    label: "CP 3–4 Person",
     appliesTo: ["Cold Plunge"],
     items: [
-      { label: "Chiller 2-3HP + controller", cost: 8800 },
-      { label: "AOP / UV sanitization", cost: 2200 },
-      { label: "Pump & filter (cartridge)", cost: 1800 },
+      { label: "Chiller ~2.5-ton + controller", cost: 18000 },
+      { label: "AOP / UV sanitization", cost: 1900 },
+      { label: "Pump & filter (upsized)", cost: 3200 },
       { label: "Valves, unions, fittings", cost: 1200 },
-      { label: "Sensors / controls panel", cost: 1600 },
+      { label: "Sensors / control panel", cost: 1600 },
+      { label: "Chemical dosing & monitoring controller", cost: 2200 },
     ],
   },
+  {
+    key: "cp-5-6",
+    label: "CP 5–6 Person",
+    appliesTo: ["Cold Plunge"],
+    items: [
+      { label: "Chiller ~4-ton + controller", cost: 26000 },
+      { label: "AOP / UV sanitization", cost: 2100 },
+      { label: "Pump & filter (upsized)", cost: 3500 },
+      { label: "Valves, unions, fittings", cost: 1300 },
+      { label: "Sensors / control panel", cost: 1700 },
+      { label: "Chemical dosing & monitoring controller", cost: 2200 },
+    ],
+  },
+  {
+    key: "cp-7-8",
+    label: "CP 7–8 Person",
+    appliesTo: ["Cold Plunge"],
+    items: [
+      { label: "Chiller ~5-ton + controller", cost: 31000 },
+      { label: "AOP / UV sanitization", cost: 2300 },
+      { label: "Pump & filter (larger)", cost: 3800 },
+      { label: "Valves, unions, fittings", cost: 1400 },
+      { label: "Sensors / control panel", cost: 1800 },
+      { label: "Chemical dosing & monitoring controller", cost: 2200 },
+    ],
+  },
+  {
+    key: "cp-9-10",
+    label: "CP 9–10 Person",
+    appliesTo: ["Cold Plunge"],
+    items: [
+      { label: "Chiller ~7.5-ton + controller", cost: 43000 },
+      { label: "AOP / UV sanitization", cost: 2500 },
+      { label: "Pump & filter (larger)", cost: 4200 },
+      { label: "Valves, unions, fittings", cost: 1600 },
+      { label: "Sensors / control panel", cost: 2000 },
+      { label: "Chemical dosing & monitoring controller", cost: 2200 },
+    ],
+  },
+  {
+    key: "cp-11-12",
+    label: "CP 11–12 Person",
+    appliesTo: ["Cold Plunge"],
+    items: [
+      { label: "Chiller ~10-ton + controller", cost: 55000 },
+      { label: "AOP / UV sanitization", cost: 2700 },
+      { label: "Pump & filter (larger)", cost: 4500 },
+      { label: "Valves, unions, fittings", cost: 1800 },
+      { label: "Sensors / control panel", cost: 2200 },
+      { label: "Chemical dosing & monitoring controller", cost: 2200 },
+    ],
+  },
+  {
+    key: "cp-13-15plus",
+    label: "CP 13–15+ Person",
+    appliesTo: ["Cold Plunge"],
+    items: [
+      { label: "Chiller ~12.5–15-ton + controller", cost: 68000 }, // adjust to your vendor quotes
+      { label: "AOP / UV sanitization", cost: 3000 },
+      { label: "Pump & filter (largest)", cost: 5000 },
+      { label: "Valves, unions, fittings", cost: 2000 },
+      { label: "Sensors / control panel", cost: 2400 },
+      { label: "Chemical dosing & monitoring controller", cost: 2200 },
+    ],
+  },
+
+  // --- Hot Tub baseline (unchanged) ---
   {
     key: "ht-standard",
-    label: "Hot Tub Standard (6-8 jets)",
+    label: "Hot Tub Standard (6–8 jets)",
     appliesTo: ["Hot Tub"],
     items: [
       { label: "Gas heater (400k BTU) or equiv", cost: 4200 },
@@ -73,6 +147,7 @@ const DEFAULT_PACKAGES: EquipmentPackage[] = [
       { label: "Filter/pump", cost: 1600 },
       { label: "Valves, unions, fittings", cost: 1200 },
       { label: "Sensors / controls panel", cost: 1800 },
+      { label: "Chemical dosing & monitoring controller", cost: 2200 },
     ],
   },
 ];
@@ -117,7 +192,7 @@ const Num: React.FC<{ value: number; onChange: (n: number) => void; step?: numbe
 
 /** ---------- main ---------- */
 export default function EpsPoolCalculator() {
-  /** Project-level scopes (Design/Eng is separate from Equipment, as requested) */
+  /** Scopes */
   const [scopeMaterials, setScopeMaterials] = useState(true);
   const [scopeInstallation, setScopeInstallation] = useState(true);
   const [scopeEquipment, setScopeEquipment] = useState(true);
@@ -125,51 +200,55 @@ export default function EpsPoolCalculator() {
   const [scopeDesignEng, setScopeDesignEng] = useState(true);
   const [scopeWarranty, setScopeWarranty] = useState(true);
 
-  /** Global rates & knobs */
-  // SIMPLIFIED: one combined materials rate for tile + membrane + bond ($/sf)
-  const [materialsPerSf, setMaterialsPerSf] = useState(16); // e.g., tile+thinset+grout+membrane
+  /** Global rates */
+  const [materialsPerSf, setMaterialsPerSf] = useState(16);
 
   // Installation
-  const [repOnsiteFee, setRepOnsiteFee] = useState(4000);           // per project
-  const [epsWpPerSf, setEpsWpPerSf] = useState(40);                 // $/sf EPS assembly + waterproofing
-  const [tileTurnkeyPerSf, setTileTurnkeyPerSf] = useState(60);     // $/sf (floor+walls) installed, turnkey
+  const [repOnsiteFee, setRepOnsiteFee] = useState(4000);
+  const [epsWpPerSf, setEpsWpPerSf] = useState(40);
+  const [tileTurnkeyPerSf, setTileTurnkeyPerSf] = useState(60);
   const [useTileTurnkey, setUseTileTurnkey] = useState(true);
-  const [equipPlumbPerVessel, setEquipPlumbPerVessel] = useState(15000); // $/vessel (MEP tie-ins)
-  const [handrailInstallPerEa, setHandrailInstallPerEa] = useState(400); // per handrail
-  const [refrigLinePerCP, setRefrigLinePerCP] = useState(1800);          // cold plunge only
-  const [startupLump, setStartupLump] = useState(3500);                  // per project
-  const [regionMult, setRegionMult] = useState(1.0);                     // adjusts install & freight
+  const [equipPlumbPerVessel, setEquipPlumbPerVessel] = useState(15000);
+  const [handrailInstallPerEa, setHandrailInstallPerEa] = useState(400);
+  const [refrigLinePerCP, setRefrigLinePerCP] = useState(1800);
+  const [startupLump, setStartupLump] = useState(3500);
+  const [regionMult, setRegionMult] = useState(1.0);
 
   // Freight
   const [miles, setMiles] = useState(1000);
   const [dollarsPerMile, setDollarsPerMile] = useState(4.25);
   const [handlingPerVessel, setHandlingPerVessel] = useState(1000);
 
-  // Design & Engineering (separate scope)
+  // Design & Engineering
   const [designBase, setDesignBase] = useState(25000);
   const [designMult, setDesignMult] = useState(1.0);
 
-  // Warranty (on materials subtotal only)
+  // Warranty
   const [warrantyPctOfMaterials, setWarrantyPctOfMaterials] = useState(1.5);
 
   // OH&P and Waste
-  const [ohpPct, setOhpPct] = useState(10); // applied to full hard-cost base (your markup)
+  const [ohpPct, setOhpPct] = useState(10);
   const [wastePct, setWastePct] = useState(5);
 
   /** Equipment packages (editable) */
   const [packages, setPackages] = useState<EquipmentPackage[]>(DEFAULT_PACKAGES);
 
+  /** Project-level chemical storage (added once per project) */
+  const [useProjectChemicalStorage, setUseProjectChemicalStorage] = useState(true);
+  const [projectChemicalStorageCost, setProjectChemicalStorageCost] = useState(1200);
+
   /** Vessels list */
   const mkId = () => Math.random().toString(36).slice(2, 9);
   const [vessels, setVessels] = useState<Vessel[]>([
-    { id: mkId(), type: "Cold Plunge", name: "CP-1", length_ft: 10, width_ft: 3, waterDepth_ft: 3.5, benchSf: 0,  extraSf: 0, handrails: 1, refrigerationLine: true,  jets: 0, equipmentPackageKey: "cp-standard" },
+    { id: mkId(), type: "Cold Plunge", name: "CP-1", length_ft: 10, width_ft: 3, waterDepth_ft: 3.5, benchSf: 0,  extraSf: 0, handrails: 1, refrigerationLine: true,  jets: 0, equipmentPackageKey: "cp-1-2" },
     { id: mkId(), type: "Hot Tub",     name: "HT-1", length_ft: 17.75, width_ft: 5.58, waterDepth_ft: 3.5, benchSf: 60, extraSf: 0, handrails: 2, refrigerationLine: false, jets: 8, equipmentPackageKey: "ht-standard" },
   ]);
 
   const addVessel = (t: VesselType) => {
     const n = t === "Cold Plunge" ? `CP-${vessels.filter(v => v.type === "Cold Plunge").length + 1}`
                                   : `HT-${vessels.filter(v => v.type === "Hot Tub").length + 1}`;
-    const pkg = packages.find(p => p.appliesTo.includes(t))?.key ?? (t === "Cold Plunge" ? "cp-standard" : "ht-standard");
+    const fallBack = t === "Cold Plunge" ? "cp-1-2" : "ht-standard";
+    const pkg = packages.find(p => p.appliesTo.includes(t))?.key ?? fallBack;
     setVessels(v => v.concat({
       id: mkId(), type: t, name: n,
       length_ft: t === "Cold Plunge" ? 10 : 8,
@@ -200,32 +279,25 @@ export default function EpsPoolCalculator() {
       // Materials (single combined $/sf)
       const materialsSubtotal = scopeMaterials ? clampN(materialsPerSf) * finishSf : 0;
 
-      // Equipment package
+      // Equipment package (per vessel)
       const pkg = packages.find(p => p.key === v.equipmentPackageKey && p.appliesTo.includes(v.type));
       const equipmentSubtotal = scopeEquipment && pkg ? pkg.items.reduce((s, it) => s + clampN(it.cost), 0) : 0;
 
       // Installation
       let install = 0;
       if (scopeInstallation) {
-        install += clampN(epsWpPerSf) * finishSf; // EPS assembly + waterproofing (all finish area)
+        install += clampN(epsWpPerSf) * finishSf;
 
-        // Tile turnkey (floor + walls only)
         if (useTileTurnkey) {
           install += clampN(tileTurnkeyPerSf) * (floorSf + wallSf);
         }
 
-        // Equipment & interconnecting plumbing (per vessel)
         install += clampN(equipPlumbPerVessel);
-
-        // Handrails per EA
         install += clampN(handrailInstallPerEa) * clampN(v.handrails);
 
-        // Refrigeration line set (CP only)
         if (v.type === "Cold Plunge" && v.refrigerationLine) {
           install += clampN(refrigLinePerCP);
         }
-
-        // Jet complexity placeholder (hot tub): +$100 per jet beyond 6
         if (v.type === "Hot Tub" && v.jets > 6) {
           install += (v.jets - 6) * 100;
         }
@@ -243,8 +315,7 @@ export default function EpsPoolCalculator() {
     });
   }, [
     vessels, scopeMaterials, scopeEquipment, scopeInstallation,
-    materialsPerSf,
-    epsWpPerSf, useTileTurnkey, tileTurnkeyPerSf,
+    materialsPerSf, epsWpPerSf, useTileTurnkey, tileTurnkeyPerSf,
     equipPlumbPerVessel, handrailInstallPerEa, refrigLinePerCP, regionMult,
     packages,
   ]);
@@ -254,9 +325,7 @@ export default function EpsPoolCalculator() {
     const finishSfTotal = vesselCalcs.reduce((s, c) => s + c.areas.finishSf, 0);
 
     const materialsSubtotal = vesselCalcs.reduce((s, c) => s + c.materialsSubtotal, 0);
-
-    const equipmentSubtotal = vesselCalcs.reduce((s, c) => s + c.equipmentSubtotal, 0);
-
+    const equipmentSubtotalVessels = vesselCalcs.reduce((s, c) => s + c.equipmentSubtotal, 0);
     const installSubtotal   = vesselCalcs.reduce((s, c) => s + c.installSubtotal, 0);
 
     const freightTotal = scopeFreight
@@ -267,36 +336,33 @@ export default function EpsPoolCalculator() {
 
     const warrantyReserve = scopeWarranty ? materialsSubtotal * (clampN(warrantyPctOfMaterials) / 100) : 0;
 
-    // HARD COSTS (your cost basis before OH&P & Waste)
+    // Project-level chemical storage (once)
+    const projectChemStorage = scopeEquipment && useProjectChemicalStorage ? clampN(projectChemicalStorageCost) : 0;
+
+    // HARD COSTS (base)
     const hardCostsBase =
       materialsSubtotal +
-      equipmentSubtotal +
+      equipmentSubtotalVessels +
+      projectChemStorage +
       installSubtotal +
       freightTotal +
       designEngineering +
       warrantyReserve +
-      (scopeInstallation ? clampN(repOnsiteFee) * 1 : 0); // project-level rep fee
+      (scopeInstallation ? clampN(repOnsiteFee) : 0);
 
-    // Waste applied to hard costs base
     const wasteAmount = hardCostsBase * (clampN(wastePct) / 100);
-
-    // OHP (your markup) applied to hard costs base
-    const ohpAmount = hardCostsBase * (clampN(ohpPct) / 100);
-
-    // Client price
+    const ohpAmount   = hardCostsBase * (clampN(ohpPct) / 100);
     const clientPrice = hardCostsBase + wasteAmount + ohpAmount;
 
-    // Profit proxy = OHP amount (since OHP includes your profit & overhead)
     const profit = ohpAmount;
     const grossMarginPct = clientPrice > 0 ? (profit / clientPrice) * 100 : 0;
-
-    // Effective $/sf (based on client price)
     const effectivePerSf = finishSfTotal > 0 ? clientPrice / finishSfTotal : 0;
 
     return {
       finishSfTotal,
       materialsSubtotal,
-      equipmentSubtotal,
+      equipmentSubtotalVessels,
+      projectChemStorage,
       installSubtotal,
       freightTotal,
       designEngineering,
@@ -315,66 +381,38 @@ export default function EpsPoolCalculator() {
     scopeFreight, miles, dollarsPerMile, handlingPerVessel, regionMult,
     scopeDesignEng, designBase, designMult,
     scopeWarranty, warrantyPctOfMaterials,
-    repOnsiteFee, wastePct, ohpPct, vessels.length,
+    scopeEquipment, useProjectChemicalStorage, projectChemicalStorageCost,
+    repOnsiteFee, wastePct, ohpPct, vessels.length, scopeInstallation,
   ]);
 
-  /** ---- Presets (affect rates only) ---- */
+  /** ---- Presets ---- */
   const applyPreset = (p: "Economy" | "Standard" | "Premium" | "Union") => {
     if (p === "Economy") {
-      setRegionMult(0.95);
-      setDollarsPerMile(3.5);
-      setHandlingPerVessel(800);
-      setEquipPlumbPerVessel(12000);
-      setEpsWpPerSf(35);
-      setUseTileTurnkey(true);
-      setTileTurnkeyPerSf(45);
-      setRefrigLinePerCP(1400);
-      setStartupLump(2500);
-      setDesignMult(0.9);
-      setOhpPct(8);
+      setRegionMult(0.95); setDollarsPerMile(3.5); setHandlingPerVessel(800);
+      setEquipPlumbPerVessel(12000); setEpsWpPerSf(35); setUseTileTurnkey(true);
+      setTileTurnkeyPerSf(45); setRefrigLinePerCP(1400); setStartupLump(2500);
+      setDesignMult(0.9); setOhpPct(8);
     } else if (p === "Standard") {
-      setRegionMult(1.0);
-      setDollarsPerMile(4.25);
-      setHandlingPerVessel(1000);
-      setEquipPlumbPerVessel(15000);
-      setEpsWpPerSf(40);
-      setUseTileTurnkey(true);
-      setTileTurnkeyPerSf(60);
-      setRefrigLinePerCP(1800);
-      setStartupLump(3500);
-      setDesignMult(1.0);
-      setOhpPct(10);
+      setRegionMult(1.0); setDollarsPerMile(4.25); setHandlingPerVessel(1000);
+      setEquipPlumbPerVessel(15000); setEpsWpPerSf(40); setUseTileTurnkey(true);
+      setTileTurnkeyPerSf(60); setRefrigLinePerCP(1800); setStartupLump(3500);
+      setDesignMult(1.0); setOhpPct(10);
     } else if (p === "Premium") {
-      setRegionMult(1.15);
-      setDollarsPerMile(5.0);
-      setHandlingPerVessel(1250);
-      setEquipPlumbPerVessel(18000);
-      setEpsWpPerSf(48);
-      setUseTileTurnkey(true);
-      setTileTurnkeyPerSf(75);
-      setRefrigLinePerCP(2400);
-      setStartupLump(4500);
-      setDesignMult(1.2);
-      setOhpPct(12);
+      setRegionMult(1.15); setDollarsPerMile(5.0); setHandlingPerVessel(1250);
+      setEquipPlumbPerVessel(18000); setEpsWpPerSf(48); setUseTileTurnkey(true);
+      setTileTurnkeyPerSf(75); setRefrigLinePerCP(2400); setStartupLump(4500);
+      setDesignMult(1.2); setOhpPct(12);
     } else {
-      setRegionMult(1.25);
-      setDollarsPerMile(5.25);
-      setHandlingPerVessel(1300);
-      setEquipPlumbPerVessel(20000);
-      setEpsWpPerSf(55);
-      setUseTileTurnkey(true);
-      setTileTurnkeyPerSf(85);
-      setRefrigLinePerCP(2600);
-      setStartupLump(5200);
-      setDesignMult(1.25);
-      setOhpPct(15);
+      setRegionMult(1.25); setDollarsPerMile(5.25); setHandlingPerVessel(1300);
+      setEquipPlumbPerVessel(20000); setEpsWpPerSf(55); setUseTileTurnkey(true);
+      setTileTurnkeyPerSf(85); setRefrigLinePerCP(2600); setStartupLump(5200);
+      setDesignMult(1.25); setOhpPct(15);
     }
   };
 
   /** ---------- UI ---------- */
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      {/* Top controls in columns */}
       <GridWrap>
         <Card title="Presets & Scopes">
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
@@ -394,18 +432,16 @@ export default function EpsPoolCalculator() {
           </div>
         </Card>
 
-        <Card title="OH&P + Waste (affect Client Price)">
+        <Card title="OH&P + Waste">
           <Row label="OH&P (%)"><Num value={ohpPct} onChange={setOhpPct} step={0.5} /></Row>
           <Row label="Waste (%)"><Num value={wastePct} onChange={setWastePct} step={0.5} /></Row>
           <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
-            OHP is treated as your markup on the full hard-cost base. Waste is applied to the same base.
+            OH&P and Waste are applied to the hard-cost base to produce client price.
           </div>
         </Card>
       </GridWrap>
 
-      {/* Vessels panel and global rates side-by-side */}
       <GridWrap>
-        {/* Vessels */}
         <Card title="Vessels">
           <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
             <button onClick={() => addVessel("Cold Plunge")} style={{ padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 10 }}>+ Cold Plunge</button>
@@ -455,7 +491,6 @@ export default function EpsPoolCalculator() {
                   </select>
                 </Row>
 
-                {/* Readout */}
                 <div style={{ marginTop: 10, fontSize: 12, color: "#6b7280" }}>
                   <div>Areas — Floor: <b>{fmt(calc.areas.floorSf)} sf</b>, Walls: <b>{fmt(calc.areas.wallSf)} sf</b>, Benches/Steps: <b>{fmt(calc.areas.benchSf)} sf</b>, Extra: <b>{fmt(calc.areas.extraSf)} sf</b>, Finish total: <b>{fmt(calc.areas.finishSf)} sf</b></div>
                   <div>Materials: <b>${fmt(calc.materialsSubtotal)}</b> | Equipment: <b>${fmt(calc.equipmentSubtotal)}</b> | Install: <b>${fmt(calc.installSubtotal)}</b></div>
@@ -465,13 +500,9 @@ export default function EpsPoolCalculator() {
           })}
         </Card>
 
-        {/* Global Rates & Freight/Design */}
         <Card title="Global Rates & Assumptions">
-          {/* Materials simplified to single line item */}
           <Row label="Materials (tile+membrane) $/sf"><Num value={materialsPerSf} onChange={setMaterialsPerSf} /></Row>
-
           <div style={{ height: 1, background: "#e5e7eb", margin: "12px 0" }} />
-
           <Row label="EPS assembly & waterproofing ($/sf)"><Num value={epsWpPerSf} onChange={setEpsWpPerSf} /></Row>
           <Row label="Tile turnkey rate ($/sf)">
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -500,10 +531,18 @@ export default function EpsPoolCalculator() {
 
           <Row label="Warranty (% of materials)"><Num value={warrantyPctOfMaterials} onChange={setWarrantyPctOfMaterials} step={0.1} /></Row>
           <Row label="Rep onsite fee (project)"><Num value={repOnsiteFee} onChange={setRepOnsiteFee} /></Row>
+
+          <div style={{ height: 1, background: "#e5e7eb", margin: "12px 0" }} />
+
+          <Row label="Chemical storage (project)">
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <label><input type="checkbox" checked={useProjectChemicalStorage} onChange={e=>setUseProjectChemicalStorage(e.target.checked)} /> Include</label>
+              <Num value={projectChemicalStorageCost} onChange={setProjectChemicalStorageCost} />
+            </div>
+          </Row>
         </Card>
       </GridWrap>
 
-      {/* Equipment Packages editor spans full width */}
       <Card title="Equipment Packages (editable)">
         <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
           {packages.map((p, i) => (
@@ -541,13 +580,13 @@ export default function EpsPoolCalculator() {
         </div>
       </Card>
 
-      {/* PROJECT SUMMARY — Hard Costs vs Client Cost */}
       <Card title="Project Summary (Hard Costs vs Client Price)">
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
           <div>
             <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#6b7280" }}>Finish Surface Area</span><b>{fmt(project.finishSfTotal)} sf</b></div>
             <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#6b7280" }}>Materials (Vessels)</span><b>${fmt(project.materialsSubtotal)}</b></div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#6b7280" }}>Equipment</span><b>${fmt(project.equipmentSubtotal)}</b></div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#6b7280" }}>Equipment (vessels)</span><b>${fmt(project.equipmentSubtotalVessels)}</b></div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#6b7280" }}>Chemical storage (project)</span><b>${fmt(project.projectChemStorage)}</b></div>
           </div>
           <div>
             <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#6b7280" }}>Installation</span><b>${fmt(project.installSubtotal)}</b></div>

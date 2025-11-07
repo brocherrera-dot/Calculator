@@ -143,7 +143,7 @@ export default function EpsPoolCalculator() {
   const [scopeFreight, setScopeFreight] = useState(true);
   const [scopeDesignEng, setScopeDesignEng] = useState(true);
   const [scopeWarranty, setScopeWarranty] = useState(true);
-  const [scopeDesignCont, setScopeDesignCont] = useState(true); // NEW: design-development contingency
+  const [scopeDesignCont, setScopeDesignCont] = useState(true); // design-development contingency
 
   /** Global rates */
   const [materialsPerSf, setMaterialsPerSf] = useState(16);
@@ -168,7 +168,7 @@ export default function EpsPoolCalculator() {
   const [designBase, setDesignBase] = useState(25000);
   const [designMult, setDesignMult] = useState(1.0);
 
-  // Design-Development Contingency (as % of pre-waste/ohp base)
+  // Design-Development Contingency
   const [designContPct, setDesignContPct] = useState(7.5);
 
   // Warranty — % of final client price
@@ -274,6 +274,23 @@ export default function EpsPoolCalculator() {
     const projectChemStorage = scopeEquipment && useProjectChemicalStorage ? clampN(projectChemicalStorageCost) : 0;
     const repFee = scopeInstallation ? clampN(repOnsiteFee) : 0;
 
+    // Sum of each vessel's own materials+equipment+install
+    const sumPreAllocBase = vesselCalcs.reduce((s, c) => s + c.perVesselHardCost, 0) || 1;
+
+    // Allocate project-level items by contribution share
+    const allocShares = vesselCalcs.map((c) => c.perVesselHardCost / sumPreAllocBase);
+
+    const perVesselPreContBase = vesselCalcs.map((c, i) => {
+      const share = allocShares[i];
+      return (
+        c.perVesselHardCost +
+        share * freightTotal +
+        share * designEngineering +
+        share * projectChemStorage +
+        share * repFee
+      );
+    });
+
     // Base BEFORE contingency, waste, OH&P
     const hardBasePreCont =
       materialsSubtotal +
@@ -284,39 +301,71 @@ export default function EpsPoolCalculator() {
       designEngineering +
       repFee;
 
-    // NEW: Design-Development Contingency (applied to pre-cont base)
+    // Design-Development Contingency (applied to pre-cont base)
     const contPct = scopeDesignCont ? clampN(designContPct) / 100 : 0;
     const designContAmount = hardBasePreCont * contPct;
 
-    // Apply waste & OH&P on the contingencied base
-    const basePlusCont = hardBasePreCont + designContAmount;
+    // Allocate contingency by each vessel's pre-cont base share
+    const sumPreContBase = perVesselPreContBase.reduce((s, n) => s + n, 0) || 1;
+    const perVesselCont = perVesselPreContBase.map((b) => (b / sumPreContBase) * designContAmount);
 
-    const wasteAmount = clampN(wastePct) / 100 * basePlusCont;
-    const ohpAmountPreWarranty = clampN(ohpPct) / 100 * basePlusCont;
+    // Apply Waste & OH&P per vessel on base+contingency
+    const perVesselBasePlusCont = perVesselPreContBase.map((b, i) => b + perVesselCont[i]);
+    const wasteRate = clampN(wastePct) / 100;
+    const ohpRate = clampN(ohpPct) / 100;
+    const perVesselWaste = perVesselBasePlusCont.map((b) => b * wasteRate);
+    const perVesselOhp   = perVesselBasePlusCont.map((b) => b * ohpRate);
 
-    // Warranty as % of final client price
+    // Pre-warranty per vessel
+    const perVesselPreWarranty = perVesselBasePlusCont.map((b, i) => b + perVesselWaste[i] + perVesselOhp[i]);
+
+    // Warranty % of client price (analytic): client_v = preWarranty_v / (1 - wPct)
     const wPct = scopeWarranty ? clampN(warrantyPctOfClient) / 100 : 0;
-    const numerator = basePlusCont + wasteAmount + ohpAmountPreWarranty;
-    const clientPrice = wPct < 1 ? numerator / (1 - wPct) : Infinity;
+    const perVesselClient = perVesselPreWarranty.map((n) => (wPct < 1 ? n / (1 - wPct) : Infinity));
+    const perVesselWarranty = perVesselClient.map((n) => (scopeWarranty ? n * wPct : 0));
 
-    const warrantyReserve = scopeWarranty ? clientPrice * wPct : 0;
-    const ohpAmount = ohpAmountPreWarranty;
-    const hardCostsBaseReported = basePlusCont; // show the contingencied base as "HARD COSTS (base)"
+    // Roll-ups for project summary
+    const freightTotalUsed = freightTotal; // just naming clarity
+    const designEngineeringUsed = designEngineering;
+
+    const basePlusContProject = perVesselBasePlusCont.reduce((s, n) => s + n, 0);
+    const wasteAmount = perVesselWaste.reduce((s, n) => s + n, 0);
+    const ohpAmount   = perVesselOhp.reduce((s, n) => s + n, 0);
+    const clientPrice = perVesselClient.reduce((s, n) => s + n, 0);
+    const warrantyReserve = perVesselWarranty.reduce((s, n) => s + n, 0);
     const profit = ohpAmount;
     const grossMarginPct = clientPrice > 0 ? (profit / clientPrice) * 100 : 0;
     const effectivePerSf = finishSfTotal > 0 ? clientPrice / finishSfTotal : 0;
 
+    // Build breakdown rows for UI
+    const perVesselRows = vesselCalcs.map((c, i) => ({
+      id: c.vessel.id,
+      name: c.vessel.name,
+      type: c.vessel.type,
+      finishSf: c.areas.finishSf,
+      preContBase: perVesselPreContBase[i],
+      designCont: perVesselCont[i],
+      waste: perVesselWaste[i],
+      ohp: perVesselOhp[i],
+      warranty: perVesselWarranty[i],
+      clientTotal: perVesselClient[i],
+    }));
+
     return {
+      // areas
       finishSfTotal,
+      // subtotals
       materialsSubtotal,
       equipmentSubtotalVessels,
       projectChemStorage,
       installSubtotal,
-      freightTotal,
-      designEngineering,
+      freightTotal: freightTotalUsed,
+      designEngineering: designEngineeringUsed,
       repOnsiteFee: repFee,
-      designContAmount, // NEW
-      hardCostsBase: hardCostsBaseReported,
+      // contingency
+      designContAmount,
+      // rollups
+      hardCostsBase: basePlusContProject, // base incl. contingency
       wasteAmount,
       ohpAmount,
       warrantyReserve,
@@ -324,6 +373,8 @@ export default function EpsPoolCalculator() {
       profit,
       grossMarginPct,
       effectivePerSf,
+      // per-vessel table
+      perVesselRows,
     };
   }, [
     vesselCalcs,
@@ -607,7 +658,7 @@ export default function EpsPoolCalculator() {
               <span>Client Price</span><b>${fmt(project.clientPrice)}</b>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
-              <span>Profit (≈ OH&P amount)</span><b>${fmt(project.profit)}</b>
+              <span>Profit (≈ OH&P amount)</span><b>${fmt(project.ohpAmount)}</b>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>Gross Margin</span><b>{fmt(project.grossMarginPct)}%</b>
@@ -618,6 +669,52 @@ export default function EpsPoolCalculator() {
           </div>
         </div>
       </Card>
+
+      {/* NEW: Per-Vessel client totals */}
+      <Card title="Per-Vessel Client Totals">
+        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>
+          Each vessel includes proportional allocations of project-level items (freight, design/eng, rep onsite, chem storage),
+          plus its share of design contingency, waste, OH&amp;P, and warranty. Sums match project totals.
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#f9fafb" }}>
+                <th style={th}>Vessel</th>
+                <th style={th}>Type</th>
+                <th style={th}>Finish SF</th>
+                <th style={th}>Pre-Cont Base</th>
+                <th style={th}>Design Cont.</th>
+                <th style={th}>Waste</th>
+                <th style={th}>OH&P</th>
+                <th style={th}>Warranty</th>
+                <th style={th}>Client Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {project.perVesselRows.map((r) => (
+                <tr key={r.id}>
+                  <td style={tdLeft}>{r.name}</td>
+                  <td style={tdLeft}>{r.type}</td>
+                  <td style={td}>{fmt(r.finishSf)}</td>
+                  <td style={tdMoney}>${fmt(r.preContBase)}</td>
+                  <td style={tdMoney}>${fmt(r.designCont)}</td>
+                  <td style={tdMoney}>${fmt(r.waste)}</td>
+                  <td style={tdMoney}>${fmt(r.ohp)}</td>
+                  <td style={tdMoney}>${fmt(r.warranty)}</td>
+                  <td style={{ ...tdMoney, fontWeight: 700 }}>${fmt(r.clientTotal)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 }
+
+/** small table styles */
+const th: React.CSSProperties = { textAlign: "right", padding: "8px 10px", borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" };
+const td: React.CSSProperties = { textAlign: "right", padding: "8px 10px", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap" };
+const tdMoney: React.CSSProperties = td;
+const tdLeft: React.CSSProperties = { ...td, textAlign: "left" };

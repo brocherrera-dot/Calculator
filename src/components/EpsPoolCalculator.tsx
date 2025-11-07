@@ -16,13 +16,13 @@ interface Vessel {
   length_ft: number;
   width_ft: number;
   waterDepth_ft: number;
-  benchSf: number;      // extra finish surface for benches/steps
-  extraSf: number;      // any other finish surface
+  benchSf: number;
+  extraSf: number;
   handrails: number;
-  refrigerationLine: boolean; // CP only
-  jets: number;               // Hot tub complexity hint
+  refrigerationLine: boolean;
+  jets: number;
   equipmentPackageKey: string;
-  collapsed?: boolean;        // UI only
+  collapsed?: boolean;
 }
 
 interface EquipmentLineItem { label: string; cost: number; }
@@ -33,7 +33,7 @@ interface EquipmentPackage {
   items: EquipmentLineItem[];
 }
 
-/* -------- latest equipment pricing (as requested: keep these) ------- */
+/* -------- latest equipment pricing (locked per your request) ------- */
 const DEFAULT_PACKAGES: EquipmentPackage[] = [
   { key: "cp-1-2", label: "CP 1–2 Person", appliesTo: ["Cold Plunge"], items: [
     { label: "Chiller 1.5-ton + controller", cost: 13000 },
@@ -103,14 +103,19 @@ const DEFAULT_PACKAGES: EquipmentPackage[] = [
 ];
 
 /* -------------------------- tiny UI pieces -------------------------- */
-const Card: React.FC<{ title?: string }> = ({ title, children }) => (
-  <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16 }}>
+const Card: React.FC<{ title?: string; tight?: boolean }> = ({ title, tight, children }) => (
+  <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: tight ? 12 : 16 }}>
     {title ? <div style={{ fontWeight: 600, marginBottom: 10 }}>{title}</div> : null}
     {children}
   </div>
 );
-const GridWrap: React.FC = ({ children }) => (
-  <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", alignItems: "start" }}>
+const GridCols: React.FC<{ cols?: number }> = ({ cols = 2, children }) => (
+  <div style={{
+    display: "grid",
+    gap: 16,
+    gridTemplateColumns: `repeat(${cols}, minmax(320px, 1fr))`,
+    alignItems: "start"
+  }}>
     {children}
   </div>
 );
@@ -142,19 +147,19 @@ export default function EpsPoolCalculator() {
   const [scopeWarranty, setScopeWarranty] = useState(true);
 
   /* MATERIALS — per SF & per vessel bundles */
-  const [epsBundlePerSf, setEpsBundlePerSf] = useState(6);     // EPS foam + adhesives + mesh + Basecrete/membrane
+  const [epsBundlePerSf, setEpsBundlePerSf] = useState(6);       // EPS foam + adhesives + mesh + Basecrete/membrane
   const [tileMaterialsPerSf, setTileMaterialsPerSf] = useState(20); // Tile + thinset + grout + sundries
   const [ffeMaterialsPerVessel, setFfeMaterialsPerVessel] = useState(2000); // handrails, markers, DOH safety kit
 
   /* LABOR — per SF & per vessel */
-  const [epsWpLaborPerSf, setEpsWpLaborPerSf] = useState(40);  // EPS assembly + waterproofing labor
-  const [tileLaborPerSf, setTileLaborPerSf] = useState(40);    // tile setting labor
-  const [ffeLaborPerVessel, setFfeLaborPerVessel] = useState(600); // FF&E install
+  const [epsWpLaborPerSf, setEpsWpLaborPerSf] = useState(40);    // EPS assembly + waterproofing labor
+  const [tileLaborPerSf, setTileLaborPerSf] = useState(40);      // tile setting labor
+  const [ffeLaborPerVessel, setFfeLaborPerVessel] = useState(600);
   const [equipPlumbPerVessel, setEquipPlumbPerVessel] = useState(15000); // interconnect & equipment setting (CP baseline; HT 1.5×)
-  const [handrailInstallPerEa, setHandrailInstallPerEa] = useState(0);   // if you want handrail labor apart from FF&E, leave 0 otherwise
-  const [refrigLinePerCP, setRefrigLinePerCP] = useState(1800);          // CP only
-  const [startupLump, setStartupLump] = useState(3500);                  // project
-  const [repOnsiteFee, setRepOnsiteFee] = useState(4000);                // project
+  const [handrailInstallPerEa, setHandrailInstallPerEa] = useState(0);
+  const [refrigLinePerCP, setRefrigLinePerCP] = useState(1800);
+  const [startupLump, setStartupLump] = useState(3500);
+  const [repOnsiteFee, setRepOnsiteFee] = useState(4000);
   const [includeRigging, setIncludeRigging] = useState(true);
   const [riggingPerVessel, setRiggingPerVessel] = useState(2000);
   const [regionMult, setRegionMult] = useState(1.0);
@@ -174,7 +179,7 @@ export default function EpsPoolCalculator() {
   const [ohpPct, setOhpPct] = useState(12);
   const [wastePct, setWastePct] = useState(7.5);
 
-  /* Equipment packages (editable if you want later) */
+  /* Equipment packages (editable) */
   const [packages, setPackages] = useState<EquipmentPackage[]>(DEFAULT_PACKAGES);
 
   /* Project chemical storage */
@@ -233,26 +238,17 @@ export default function EpsPoolCalculator() {
       // LABOR:
       let labor = 0;
       if (scopeLabor) {
-        // EPS + waterproofing labor on all finish surfaces
-        labor += clampN(epsWpLaborPerSf) * finishSf;
-        // Tile install labor on floor + walls
-        labor += clampN(tileLaborPerSf) * (floorSf + wallSf);
-        // FF&E install per vessel
-        labor += clampN(ffeLaborPerVessel);
-        // Interconnect & equipment setting — +50% for hot tubs
+        labor += clampN(epsWpLaborPerSf) * finishSf;                 // EPS + waterproofing labor
+        labor += clampN(tileLaborPerSf) * (floorSf + wallSf);        // Tile setting labor
+        labor += clampN(ffeLaborPerVessel);                          // FF&E install
         const interconnect = (v.type === "Hot Tub")
-          ? clampN(equipPlumbPerVessel) * 1.5
+          ? clampN(equipPlumbPerVessel) * 1.5                         // +50% for hot tubs
           : clampN(equipPlumbPerVessel);
         labor += interconnect;
-        // Optional handrail labor if used independently
-        labor += clampN(handrailInstallPerEa) * clampN(v.handrails);
-        // CP refrigeration line set if selected
+        labor += clampN(handrailInstallPerEa) * clampN(v.handrails); // optional extra
         if (v.type === "Cold Plunge" && v.refrigerationLine) labor += clampN(refrigLinePerCP);
-        // Simple hot tub jet adder beyond baseline 6
-        if (v.type === "Hot Tub" && v.jets > 6) labor += (v.jets - 6) * 100;
-
-        // Region multiplier on labor
-        labor *= clampN(regionMult);
+        if (v.type === "Hot Tub" && v.jets > 6) labor += (v.jets - 6) * 100; // simple jet adder
+        labor *= clampN(regionMult);                                  // regional multiplier on labor
       }
 
       const materialsSubtotal = materialsEpsBundle + materialsTile + materialsFfe;
@@ -288,14 +284,13 @@ export default function EpsPoolCalculator() {
     const freightTotal = scopeFreight
       ? (clampN(miles) * clampN(dollarsPerMile) + vessels.length * clampN(handlingPerVessel)) * clampN(regionMult)
       : 0;
-
     const designEngineering = scopeDesignEng ? clampN(designBase) * clampN(designMult) : 0;
     const repFee = scopeLabor ? clampN(repOnsiteFee) : 0;
     const startup = scopeLabor ? clampN(startupLump) : 0;
     const chemStorage = scopeEquipment && useProjectChemicalStorage ? clampN(projectChemicalStorageCost) : 0;
     const rigging = (scopeLabor && includeRigging) ? clampN(riggingPerVessel) * vessels.length : 0;
 
-    // Allocate project-level softs proportionally to vessels
+    // Allocate project-level softs to vessels by cost share
     const allocShares = vesselCalcs.map(c => c.perVesselDirect / sumPreAllocBase);
     const perVesselPreContBase = vesselCalcs.map((c, i) =>
       c.perVesselDirect +
@@ -376,9 +371,10 @@ export default function EpsPoolCalculator() {
   /* ------------------------------- UI -------------------------------- */
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <GridWrap>
-        <Card title="Scopes">
-          <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+      {/* Top controls row */}
+      <GridCols cols={3}>
+        <Card title="Scopes" tight>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(140px, 1fr))", gap: 8 }}>
             <label><input type="checkbox" checked={scopeMaterials} onChange={e=>setScopeMaterials(e.target.checked)} /> Materials</label>
             <label><input type="checkbox" checked={scopeLabor}     onChange={e=>setScopeLabor(e.target.checked)} /> Labor</label>
             <label><input type="checkbox" checked={scopeEquipment} onChange={e=>setScopeEquipment(e.target.checked)} /> Equipment</label>
@@ -389,15 +385,21 @@ export default function EpsPoolCalculator() {
           </div>
         </Card>
 
-        <Card title="OH&P, Waste, Warranty & Contingency">
+        <Card title="OH&P, Waste, Warranty & Contingency" tight>
           <Row label="OH&P (%)"><Num value={ohpPct} onChange={setOhpPct} step={0.5} /></Row>
           <Row label="Waste (%)"><Num value={wastePct} onChange={setWastePct} step={0.5} /></Row>
           <Row label="Warranty (% of client)"><Num value={warrantyPctOfClient} onChange={setWarrantyPctOfClient} step={0.1} /></Row>
           <Row label="Design development contingency (%)"><Num value={designContPct} onChange={setDesignContPct} step={0.5} /></Row>
         </Card>
-      </GridWrap>
 
-      <GridWrap>
+        <Card title="Design & Engineering" tight>
+          <Row label="Design base ($)"><Num value={designBase} onChange={setDesignBase} step={500} /></Row>
+          <Row label="Complexity multiplier (×)"><Num value={designMult} onChange={setDesignMult} step={0.05} /></Row>
+        </Card>
+      </GridCols>
+
+      {/* Materials / Labor / Freight */}
+      <GridCols cols={3}>
         <Card title="Materials (per-SF / per-vessel)">
           <Row label="EPS Vessel Materials ($/sf)">
             <Num value={epsBundlePerSf} onChange={setEpsBundlePerSf} step={0.25} />
@@ -432,35 +434,29 @@ export default function EpsPoolCalculator() {
           <Row label="Startup / Commissioning (project)">
             <Num value={startupLump} onChange={setStartupLump} step={100} />
           </Row>
+          <Row label="Region multiplier (×)">
+            <Num value={regionMult} onChange={setRegionMult} step={0.01} />
+          </Row>
           <Row label="Include Rigging?">
             <label><input type="checkbox" checked={includeRigging} onChange={e=>setIncludeRigging(e.target.checked)} /> Yes</label>
           </Row>
           <Row label="Rigging ($/vessel)">
             <Num value={riggingPerVessel} onChange={setRiggingPerVessel} step={100} />
           </Row>
-          <Row label="Region multiplier (×)">
-            <Num value={regionMult} onChange={setRegionMult} step={0.01} />
-          </Row>
         </Card>
-      </GridWrap>
 
-      <GridWrap>
         <Card title="Freight / Delivery">
           <Row label="Distance (mi)"><Num value={miles} onChange={setMiles} /></Row>
           <Row label="Rate ($/mi)"><Num value={dollarsPerMile} onChange={setDollarsPerMile} step={0.05} /></Row>
           <Row label="Handling per vessel ($)"><Num value={handlingPerVessel} onChange={setHandlingPerVessel} step={50} /></Row>
         </Card>
+      </GridCols>
 
-        <Card title="Design & Engineering">
-          <Row label="Design base ($)"><Num value={designBase} onChange={setDesignBase} step={500} /></Row>
-          <Row label="Complexity multiplier (×)"><Num value={designMult} onChange={setDesignMult} step={0.05} /></Row>
-        </Card>
-      </GridWrap>
-
+      {/* Vessels */}
       <Card title="Vessels">
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <button onClick={() => addVessel("Cold Plunge")} style={{ padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 10 }}>+ Cold Plunge</button>
-          <button onClick={() => addVessel("Hot Tub")} style={{ padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 10 }}>+ Hot Tub</button>
+          <button onClick={() => addVessel("Cold Plunge")} style={btn}>+ Cold Plunge</button>
+          <button onClick={() => addVessel("Hot Tub")} style={btn}>+ Hot Tub</button>
         </div>
 
         {vessels.map((v) => {
@@ -481,7 +477,7 @@ export default function EpsPoolCalculator() {
                     onClick={() => updateVessel(v.id, { collapsed: !v.collapsed })}
                     aria-expanded={!v.collapsed}
                     title={v.collapsed ? "Expand" : "Collapse"}
-                    style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", cursor: "pointer" }}
+                    style={iconBtn}
                   >
                     {v.collapsed ? "▸" : "▾"}
                   </button>
@@ -489,48 +485,50 @@ export default function EpsPoolCalculator() {
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   {headerRight}
-                  <button onClick={() => removeVessel(v.id)} style={{ padding: "4px 10px", borderRadius: 8, border: "1px solid #ef4444", color: "#ef4444", background: "#fff" }}>Remove</button>
+                  <button onClick={() => removeVessel(v.id)} style={dangerBtn}>Remove</button>
                 </div>
               </div>
 
               {!v.collapsed && (
-                <div style={{ marginTop: 12 }}>
-                  <Row label="Name">
-                    <input value={v.name} onChange={e => updateVessel(v.id, { name: e.target.value })} style={{ width: "100%", padding: "8px 10px", border: "1px solid #d1d5db", borderRadius: 10 }} />
-                  </Row>
-                  <Row label="Inside length (ft)"><Num value={v.length_ft} onChange={n => updateVessel(v.id, { length_ft: n })} step={0.1} /></Row>
-                  <Row label="Inside width (ft)"><Num value={v.width_ft} onChange={n => updateVessel(v.id, { width_ft: n })} step={0.1} /></Row>
-                  <Row label="Water depth (ft)"><Num value={v.waterDepth_ft} onChange={n => updateVessel(v.id, { waterDepth_ft: n })} step={0.1} /></Row>
-                  <Row label="Bench / steps surface (sf)"><Num value={v.benchSf} onChange={n => updateVessel(v.id, { benchSf: n })} /></Row>
-                  <Row label="Extra surface (sf)"><Num value={v.extraSf} onChange={n => updateVessel(v.id, { extraSf: n })} /></Row>
-                  <Row label="Handrails (ea)"><Num value={v.handrails} onChange={n => updateVessel(v.id, { handrails: n })} /></Row>
-
-                  {v.type === "Cold Plunge" && (
-                    <Row label="Refrigeration line set">
-                      <label><input type="checkbox" checked={v.refrigerationLine} onChange={e => updateVessel(v.id, { refrigerationLine: e.target.checked })} /> Include</label>
+                <div style={{ marginTop: 12, display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
+                  <div>
+                    <Row label="Name">
+                      <input value={v.name} onChange={e => updateVessel(v.id, { name: e.target.value })} style={input} />
                     </Row>
-                  )}
-                  {v.type === "Hot Tub" && (
-                    <Row label="Jets (install complexity)">
-                      <Num value={v.jets} onChange={n => updateVessel(v.id, { jets: n })} />
+                    <Row label="Inside length (ft)"><Num value={v.length_ft} onChange={n => updateVessel(v.id, { length_ft: n })} step={0.1} /></Row>
+                    <Row label="Inside width (ft)"><Num value={v.width_ft} onChange={n => updateVessel(v.id, { width_ft: n })} step={0.1} /></Row>
+                    <Row label="Water depth (ft)"><Num value={v.waterDepth_ft} onChange={n => updateVessel(v.id, { waterDepth_ft: n })} step={0.1} /></Row>
+                  </div>
+                  <div>
+                    <Row label="Bench / steps surface (sf)"><Num value={v.benchSf} onChange={n => updateVessel(v.id, { benchSf: n })} /></Row>
+                    <Row label="Extra surface (sf)"><Num value={v.extraSf} onChange={n => updateVessel(v.id, { extraSf: n })} /></Row>
+                    <Row label="Handrails (ea)"><Num value={v.handrails} onChange={n => updateVessel(v.id, { handrails: n })} /></Row>
+                    {v.type === "Cold Plunge" && (
+                      <Row label="Refrigeration line set">
+                        <label><input type="checkbox" checked={v.refrigerationLine} onChange={e => updateVessel(v.id, { refrigerationLine: e.target.checked })} /> Include</label>
+                      </Row>
+                    )}
+                    {v.type === "Hot Tub" && (
+                      <Row label="Jets (install complexity)"><Num value={v.jets} onChange={n => updateVessel(v.id, { jets: n })} /></Row>
+                    )}
+                  </div>
+                  <div>
+                    <Row label="Equipment package">
+                      <select
+                        value={v.equipmentPackageKey}
+                        onChange={e => updateVessel(v.id, { equipmentPackageKey: e.target.value })}
+                        style={input}
+                      >
+                        {availablePkgs.map(p => (
+                          <option key={p.key} value={p.key}>{p.label}</option>
+                        ))}
+                      </select>
                     </Row>
-                  )}
-
-                  <Row label="Equipment package">
-                    <select
-                      value={v.equipmentPackageKey}
-                      onChange={e => updateVessel(v.id, { equipmentPackageKey: e.target.value })}
-                      style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1px solid #d1d5db" }}
-                    >
-                      {availablePkgs.map(p => (
-                        <option key={p.key} value={p.key}>{p.label}</option>
-                      ))}
-                    </select>
-                  </Row>
-
-                  <div style={{ marginTop: 10, fontSize: 12, color: "#6b7280" }}>
-                    <div>Areas — Floor: <b>{fmt(c.areas.floorSf)} sf</b>, Walls: <b>{fmt(c.areas.wallSf)} sf</b>, Benches/Steps: <b>{fmt(c.areas.benchSf)} sf</b>, Extra: <b>{fmt(c.areas.extraSf)} sf</b>, Finish total: <b>{fmt(c.areas.finishSf)} sf</b></div>
-                    <div>Materials: <b>${fmt(c.materials.materialsEpsBundle + c.materials.materialsTile + c.materials.materialsFfe)}</b> | Equipment: <b>${fmt(c.equipmentSubtotal)}</b> | Labor: <b>${fmt(c.laborSubtotal)}</b></div>
+                    <div style={{ fontSize: 12, color: "#6b7280", marginTop: 8 }}>
+                      Areas — Floor: <b>{fmt(c.areas.floorSf)} sf</b>, Walls: <b>{fmt(c.areas.wallSf)} sf</b>, Benches/Steps: <b>{fmt(c.areas.benchSf)} sf</b>, Extra: <b>{fmt(c.areas.extraSf)} sf</b>, Finish total: <b>{fmt(c.areas.finishSf)} sf</b>
+                      <br />
+                      Subtotals — Materials: <b>${fmt(c.materials.materialsEpsBundle + c.materials.materialsTile + c.materials.materialsFfe)}</b> | Equipment: <b>${fmt(c.equipmentSubtotal)}</b> | Labor: <b>${fmt(c.laborSubtotal)}</b>
+                    </div>
                   </div>
                 </div>
               )}
@@ -539,90 +537,169 @@ export default function EpsPoolCalculator() {
         })}
       </Card>
 
-      {/* Summary */}
-      <Card title="Project Summary — Hard Costs vs Client">
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
-          <div>
-            <div style={row}><span className="l">Finish Surface Area</span><b>{fmt(project.finishSfTotal)} sf</b></div>
-            <div style={row}><span className="l">Materials (vessels)</span><b>${fmt(project.materialsTotal)}</b></div>
-            <div style={row}><span className="l">Equipment (vessels)</span><b>${fmt(project.equipmentSubtotalVessels)}</b></div>
-            <div style={row}><span className="l">Labor (vessels)</span><b>${fmt(project.laborSubtotal)}</b></div>
+      {/* Equipment config (collapsible) */}
+      <details>
+        <summary style={summary}>Equipment Package Configuration</summary>
+        <Card>
+          <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>
+            Edit line-item pricing inside each package. These changes affect totals immediately.
           </div>
-          <div>
-            <div style={row}><span className="l">Freight / Delivery</span><b>${fmt(project.freightTotal)}</b></div>
-            <div style={row}><span className="l">Design & Engineering</span><b>${fmt(project.designEngineering)}</b></div>
-            <div style={row}><span className="l">Rep Onsite (project)</span><b>${fmt(project.repFee)}</b></div>
-            <div style={row}><span className="l">Startup (project)</span><b>${fmt(project.startup)}</b></div>
-            <div style={row}><span className="l">Chem Storage (project)</span><b>${fmt(project.chemStorage)}</b></div>
-            <div style={row}><span className="l">Rigging</span><b>${fmt(project.rigging)}</b></div>
+          <div style={{ display: "grid", gap: 12 }}>
+            {packages.map((p, idxP) => (
+              <details key={p.key}>
+                <summary style={summarySm}>{p.label} — applies to {p.appliesTo.join(", ")}</summary>
+                <div style={{ padding: "8px 0", display: "grid", gap: 6 }}>
+                  {p.items.map((it, idxI) => (
+                    <div key={idxI} style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: 8, alignItems: "center" }}>
+                      <input
+                        value={it.label}
+                        onChange={e => {
+                          const next = [...packages];
+                          next[idxP] = { ...next[idxP], items: next[idxP].items.map((x, i) => i === idxI ? { ...x, label: e.target.value } : x) };
+                          setPackages(next);
+                        }}
+                        style={input}
+                      />
+                      <Num
+                        value={it.cost}
+                        onChange={(n) => {
+                          const next = [...packages];
+                          next[idxP] = { ...next[idxP], items: next[idxP].items.map((x, i) => i === idxI ? { ...x, cost: clampN(n) } : x) };
+                          setPackages(next);
+                        }}
+                        step={100}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ))}
           </div>
-          <div>
-            <div style={row}><span className="l">Design Contingency</span><b>${fmt(project.designContAmount)}</b></div>
-            <div style={row}><span className="l">Waste</span><b>${fmt(project.wasteAmount)}</b></div>
-            <div style={row}><span className="l">OH&P</span><b>${fmt(project.ohpAmount)}</b></div>
-            <div style={row}><span className="l">Warranty</span><b>${fmt(project.warrantyReserve)}</b></div>
-          </div>
-        </div>
+        </Card>
+      </details>
 
-        <div style={{ height: 1, background: "#e5e7eb", margin: "12px 0" }} />
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
-          <div style={{ background: "#f9fafb", borderRadius: 10, padding: 12 }}>
-            <div style={rowBig}><span>Client Price</span><b>${fmt(project.clientPrice)}</b></div>
-            <div style={row}><span>Profit (≈ OH&P amount)</span><b>${fmt(project.ohpAmount)}</b></div>
-            <div style={row}><span>Gross Margin</span><b>{fmt(project.grossMarginPct)}%</b></div>
-            <div style={row}><span>Effective $/sf (client)</span><b>${fmt(project.effectivePerSf)}</b></div>
-          </div>
-        </div>
-      </Card>
-
-      {/* Per-vessel client totals */}
-      <Card title="Per-Vessel Client Totals">
-        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>
-          Each vessel includes proportional allocations of project-level items (freight, design/eng, rep onsite, startup, chemical storage, rigging),
-          plus its share of design contingency, waste, OH&amp;P, and warranty. Sums match project totals.
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ background: "#f9fafb" }}>
-                <th style={th}>Vessel</th>
-                <th style={th}>Type</th>
-                <th style={th}>Finish SF</th>
-                <th style={th}>Pre-Cont Base</th>
-                <th style={th}>Design Cont.</th>
-                <th style={th}>Waste</th>
-                <th style={th}>OH&P</th>
-                <th style={th}>Warranty</th>
-                <th style={th}>Client Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {project.perVesselRows.map((r) => (
-                <tr key={r.id}>
-                  <td style={tdLeft}>{r.name}</td>
-                  <td style={tdLeft}>{r.type}</td>
-                  <td style={td}>{fmt(r.finishSf)}</td>
-                  <td style={tdMoney}>${fmt(r.preContBase)}</td>
-                  <td style={tdMoney}>${fmt(r.designCont)}</td>
-                  <td style={tdMoney}>${fmt(r.waste)}</td>
-                  <td style={tdMoney}>${fmt(r.ohp)}</td>
-                  <td style={tdMoney}>${fmt(r.warranty)}</td>
-                  <td style={{ ...tdMoney, fontWeight: 700 }}>${fmt(r.clientTotal)}</td>
+      {/* Assumptions & math (collapsible) */}
+      <details>
+        <summary style={summary}>Assumptions & Math (click to expand)</summary>
+        <Card>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: "#f9fafb" }}>
+                  <th style={thLeft}>Bucket</th>
+                  <th style={thLeft}>What it includes</th>
+                  <th style={thLeft}>Default</th>
+                  <th style={thLeft}>Units</th>
+                  <th style={thLeft}>Notes</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+              </thead>
+              <tbody>
+                <tr><td style={tdLeft}>EPS Vessel Materials</td><td style={tdLeft}>EPS foam, adhesives, mesh, Basecrete/membrane</td><td style={tdLeft}>$6.00</td><td style={tdLeft}>per sf (finish)</td><td style={tdLeft}>EPS @ ~$7.80/ft³ blended into rate</td></tr>
+                <tr><td style={tdLeft}>Tile & Setting Materials</td><td style={tdLeft}>Tile, thinset, grout, sundries</td><td style={tdLeft}>$20.00</td><td style={tdLeft}>per sf (floor+walls)</td><td style={tdLeft}>Finish materials only</td></tr>
+                <tr><td style={tdLeft}>EPS + Waterproofing Labor</td><td style={tdLeft}>Fabrication + membrane application</td><td style={tdLeft}>$40.00</td><td style={tdLeft}>per sf (finish)</td><td style={tdLeft}>Labor only</td></tr>
+                <tr><td style={tdLeft}>Tile Install Labor</td><td style={tdLeft}>Set tile + grout</td><td style={tdLeft}>$40.00</td><td style={tdLeft}>per sf (floor+walls)</td><td style={tdLeft}>Labor only</td></tr>
+                <tr><td style={tdLeft}>FF&E Materials</td><td style={tdLeft}>Handrails, markers, safety kit</td><td style={tdLeft}>$2,000</td><td style={tdLeft}>per vessel</td><td style={tdLeft}>Hard goods bundle</td></tr>
+                <tr><td style={tdLeft}>FF&E Labor</td><td style={tdLeft}>Install rails, signage, etc.</td><td style={tdLeft}>$600</td><td style={tdLeft}>per vessel</td><td style={tdLeft}>3–4 hrs @ loaded rate</td></tr>
+                <tr><td style={tdLeft}>Equip & Interconnect</td><td style={tdLeft}>Set equipment, tie-in plumbing</td><td style={tdLeft}>$15,000</td><td style={tdLeft}>per vessel</td><td style={tdLeft}>Hot Tub = 1.5× for jets</td></tr>
+                <tr><td style={tdLeft}>Refrigeration Line (CP)</td><td style={tdLeft}>Run/insulate refrig lines</td><td style={tdLeft}>$1,800</td><td style={tdLeft}>per vessel</td><td style={tdLeft}>Cold Plunge only</td></tr>
+                <tr><td style={tdLeft}>Freight / Delivery</td><td style={tdLeft}>Line-haul + handling</td><td style={tdLeft}>$4.25/mi + $1,000/vessel</td><td style={tdLeft}>project + per vessel</td><td style={tdLeft}>Region multiplier applies to labor</td></tr>
+                <tr><td style={tdLeft}>Design & Engineering</td><td style={tdLeft}>DOH + permit-ready drawings</td><td style={tdLeft}>$25,000 × mult</td><td style={tdLeft}>per project</td><td style={tdLeft}>Complexity multiplier adjustable</td></tr>
+                <tr><td style={tdLeft}>Startup / Commissioning</td><td style={tdLeft}>Tech time, balancing</td><td style={tdLeft}>$3,500</td><td style={tdLeft}>per project</td><td style={tdLeft}>Average commercial start</td></tr>
+                <tr><td style={tdLeft}>Rigging</td><td style={tdLeft}>Crane/fork placement</td><td style={tdLeft}>$2,000</td><td style={tdLeft}>per vessel</td><td style={tdLeft}>Toggle on/off</td></tr>
+                <tr><td style={tdLeft}>Design Dev. Contingency</td><td style={tdLeft}>Scope/unknowns buffer</td><td style={tdLeft}>7.5%</td><td style={tdLeft}>of base</td><td style={tdLeft}>Applied pre-waste, pre-OH&P</td></tr>
+                <tr><td style={tdLeft}>Waste</td><td style={tdLeft}>Cuts/overage/inefficiency</td><td style={tdLeft}>7.5%</td><td style={tdLeft}>of base+cont</td><td style={tdLeft}>Markup layer</td></tr>
+                <tr><td style={tdLeft}>OH&P</td><td style={tdLeft}>Overhead & profit</td><td style={tdLeft}>12%</td><td style={tdLeft}>of base+cont</td><td style={tdLeft}>Profit ≈ OH&P amount</td></tr>
+                <tr><td style={tdLeft}>Warranty Reserve</td><td style={tdLeft}>Post-completion reserve</td><td style={tdLeft}>1.5%</td><td style={tdLeft}>of client total</td><td style={tdLeft}>Solved from top-line</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </details>
+
+      {/* Summary */}
+      <GridCols cols={2}>
+        <Card title="Project Summary — Hard Costs vs Client">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
+            <div>
+              <div style={row}><span className="l">Finish Surface Area</span><b>{fmt(project.finishSfTotal)} sf</b></div>
+              <div style={row}><span className="l">Materials (vessels)</span><b>${fmt(project.materialsTotal)}</b></div>
+              <div style={row}><span className="l">Equipment (vessels)</span><b>${fmt(project.equipmentSubtotalVessels)}</b></div>
+              <div style={row}><span className="l">Labor (vessels)</span><b>${fmt(project.laborSubtotal)}</b></div>
+              <div style={row}><span className="l">Freight / Delivery</span><b>${fmt(project.freightTotal)}</b></div>
+              <div style={row}><span className="l">Design & Engineering</span><b>${fmt(project.designEngineering)}</b></div>
+              <div style={row}><span className="l">Rep Onsite (project)</span><b>${fmt(project.repFee)}</b></div>
+              <div style={row}><span className="l">Startup (project)</span><b>${fmt(project.startup)}</b></div>
+              <div style={row}><span className="l">Chem Storage (project)</span><b>${fmt(project.chemStorage)}</b></div>
+              <div style={row}><span className="l">Rigging</span><b>${fmt(project.rigging)}</b></div>
+              <div style={{ height: 1, background: "#e5e7eb", margin: "10px 0" }} />
+              <div style={row}><span className="l">Design Contingency</span><b>${fmt(project.designContAmount)}</b></div>
+              <div style={row}><span className="l">Waste</span><b>${fmt(project.wasteAmount)}</b></div>
+              <div style={row}><span className="l">OH&P</span><b>${fmt(project.ohpAmount)}</b></div>
+              <div style={row}><span className="l">Warranty</span><b>${fmt(project.warrantyReserve)}</b></div>
+            </div>
+            <div style={{ background: "#f9fafb", borderRadius: 10, padding: 12 }}>
+              <div style={rowBig}><span>Client Price</span><b>${fmt(project.clientPrice)}</b></div>
+              <div style={row}><span>Profit (≈ OH&P amount)</span><b>${fmt(project.ohpAmount)}</b></div>
+              <div style={row}><span>Gross Margin</span><b>{fmt(project.grossMarginPct)}%</b></div>
+              <div style={row}><span>Effective $/sf (client)</span><b>${fmt(project.effectivePerSf)}</b></div>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Per-Vessel Client Totals">
+          <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>
+            Each vessel includes proportional allocations of project-level items (freight, design/eng, rep onsite, startup, chemical storage, rigging),
+            plus its share of design contingency, waste, OH&amp;P, and warranty. Sums match project totals.
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#f9fafb" }}>
+                  <th style={th}>Vessel</th>
+                  <th style={th}>Type</th>
+                  <th style={th}>Finish SF</th>
+                  <th style={th}>Pre-Cont Base</th>
+                  <th style={th}>Design Cont.</th>
+                  <th style={th}>Waste</th>
+                  <th style={th}>OH&P</th>
+                  <th style={th}>Warranty</th>
+                  <th style={th}>Client Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {project.perVesselRows.map((r) => (
+                  <tr key={r.id}>
+                    <td style={tdLeft}>{r.name}</td>
+                    <td style={tdLeft}>{r.type}</td>
+                    <td style={td}>{fmt(r.finishSf)}</td>
+                    <td style={tdMoney}>${fmt(r.preContBase)}</td>
+                    <td style={tdMoney}>${fmt(r.designCont)}</td>
+                    <td style={tdMoney}>${fmt(r.waste)}</td>
+                    <td style={tdMoney}>${fmt(r.ohp)}</td>
+                    <td style={tdMoney}>${fmt(r.warranty)}</td>
+                    <td style={{ ...tdMoney, fontWeight: 700 }}>${fmt(r.clientTotal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </GridCols>
     </div>
   );
 }
 
-/* small table styles */
+/* small reusable styles */
+const input: React.CSSProperties = { width: "100%", padding: "8px 10px", border: "1px solid #d1d5db", borderRadius: 10 };
+const btn: React.CSSProperties = { padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 10, background: "#fff" };
+const iconBtn: React.CSSProperties = { width: 28, height: 28, borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", cursor: "pointer" };
+const dangerBtn: React.CSSProperties = { padding: "4px 10px", borderRadius: 8, border: "1px solid #ef4444", color: "#ef4444", background: "#fff" };
 const row: React.CSSProperties = { display: "flex", justifyContent: "space-between", padding: "4px 0" };
 const rowBig: React.CSSProperties = { ...row, fontSize: 18 };
 const th: React.CSSProperties = { textAlign: "right", padding: "8px 10px", borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" };
+const thLeft: React.CSSProperties = { ...th, textAlign: "left" };
 const td: React.CSSProperties = { textAlign: "right", padding: "8px 10px", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap" };
 const tdMoney: React.CSSProperties = td;
 const tdLeft: React.CSSProperties = { ...td, textAlign: "left" };
+const summary: React.CSSProperties = { cursor: "pointer", userSelect: "none", padding: "10px 0", fontWeight: 600 };
+const summarySm: React.CSSProperties = { cursor: "pointer", userSelect: "none", padding: "6px 0", fontWeight: 600 };

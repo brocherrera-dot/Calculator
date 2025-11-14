@@ -8,6 +8,7 @@ const fmt = (n: number) =>
 
 /* ------------------------------ types ------------------------------ */
 type VesselType = "Cold Plunge" | "Hot Tub";
+type ConstructionType = "EPS" | "Stainless Steel";
 
 interface Vessel {
   id: string;
@@ -125,18 +126,24 @@ const Row: React.FC<{ label: string }> = ({ label, children }) => (
     <div>{children}</div>
   </div>
 );
-const Num: React.FC<{ value: number; onChange: (n: number) => void; step?: number }> = ({ value, onChange, step = 1 }) => (
+const Num: React.FC<{ value: number; onChange: (n: number) => void; step?: number; min?: number; max?: number; title?: string }> = ({ value, onChange, step = 1, min, max, title }) => (
   <input
     type="number"
     step={step}
+    min={min}
+    max={max}
     value={Number.isFinite(value) ? value : 0}
     onChange={(e) => onChange(Number(e.target.value))}
+    title={title}
     style={{ width: "100%", padding: "8px 10px", border: "1px solid #d1d5db", borderRadius: 10 }}
   />
 );
 
 /* ------------------------------- main ------------------------------- */
 export default function EpsPoolCalculator() {
+  /* Construction Type */
+  const [constructionType, setConstructionType] = useState<ConstructionType>("EPS");
+
   /* Scopes */
   const [scopeMaterials, setScopeMaterials] = useState(true);
   const [scopeLabor, setScopeLabor] = useState(true);
@@ -146,12 +153,19 @@ export default function EpsPoolCalculator() {
   const [scopeDesignCont, setScopeDesignCont] = useState(true);
   const [scopeWarranty, setScopeWarranty] = useState(true);
 
-  /* MATERIALS — per SF & per vessel bundles */
+  /* MATERIALS — per SF & per vessel bundles (EPS) */
   const [epsBundlePerSf, setEpsBundlePerSf] = useState(6);       // EPS foam + adhesives + mesh + Basecrete/membrane
   const [tileMaterialsPerSf, setTileMaterialsPerSf] = useState(20); // Tile + thinset + grout + sundries
   const [ffeMaterialsPerVessel, setFfeMaterialsPerVessel] = useState(2000); // handrails, markers, DOH safety kit
 
-  /* LABOR — per SF & per vessel */
+  /* STAINLESS STEEL MATERIALS — weight & length based */
+  const [ss304LPricePerLb, setSs304LPricePerLb] = useState(1.28);  // 304L plate $/lb (Mexican sourced)
+  const [ss316LPricePerFt, setSs316LPricePerFt] = useState(18);    // 316L tubing/pipe $/ft (for handrails)
+  const [plateThickness, setPlateThickness] = useState(0.1875);    // 3/16" = 0.1875 inches
+  const [bitumasticCoatingPerSf, setBitumasticCoatingPerSf] = useState(2.5); // Exterior coating
+  const [sacrificialAnodePerVessel, setSacrificialAnodePerVessel] = useState(450); // Magnesium anodes per vessel
+
+  /* LABOR — per SF & per vessel (EPS) */
   const [epsWpLaborPerSf, setEpsWpLaborPerSf] = useState(40);    // EPS assembly + waterproofing labor
   const [tileLaborPerSf, setTileLaborPerSf] = useState(40);      // tile setting labor
   const [ffeLaborPerVessel, setFfeLaborPerVessel] = useState(600);
@@ -163,6 +177,16 @@ export default function EpsPoolCalculator() {
   const [includeRigging, setIncludeRigging] = useState(true);
   const [riggingPerVessel, setRiggingPerVessel] = useState(2000);
   const [regionMult, setRegionMult] = useState(1.0);
+
+  /* STAINLESS STEEL LABOR — Mexico fabrication rates (USD/hr) */
+  const [tigWelderRatePerHr, setTigWelderRatePerHr] = useState(10);  // AWS D1.6 certified TIG welder (Mexico)
+  const [welderLoadedMult, setWelderLoadedMult] = useState(1.65);   // Loaded rate multiplier (benefits, overhead)
+  const [weldingTimePerLf, setWeldingTimePerLf] = useState(0.15);   // Hours per linear foot of weld (TIG)
+  const [grindingTimePerLf, setGrindingTimePerLf] = useState(0.10); // Hours per linear foot for grinding/finishing
+  const [polishingTimePerLf, setPolishingTimePerLf] = useState(0.08); // Hours per LF for 316L polishing to 600 grit
+  const [passivationPerSf, setPassivationPerSf] = useState(1.2);    // Passivation/cleaning cost per SF
+  const [leakTestPerVessel, setLeakTestPerVessel] = useState(800);  // Leak testing cost per vessel
+  const [qualityCertPerVessel, setQualityCertPerVessel] = useState(1200); // AWS certification & QC documentation
 
   /* FREIGHT */
   const [miles, setMiles] = useState(1000);
@@ -176,8 +200,13 @@ export default function EpsPoolCalculator() {
 
   /* WARRANTY + OH&P + WASTE */
   const [warrantyPctOfClient, setWarrantyPctOfClient] = useState(1.5);
-  const [ohpPct, setOhpPct] = useState(12);
+  const [ohpPct, setOhpPct] = useState(100);
   const [wastePct, setWastePct] = useState(7.5);
+
+  /* ADA TRANSFER WALL / STEEL FRAME */
+  const [includeAdaFrame, setIncludeAdaFrame] = useState(false);
+  const [steelTubingPricePerFt, setSteelTubingPricePerFt] = useState(4.5);  // 2" mild steel tubing $/ft
+  const [steelFabricationPerFt, setSteelFabricationPerFt] = useState(8);     // Welding/fabrication $/ft
 
   /* Equipment packages (editable) */
   const [packages, setPackages] = useState<EquipmentPackage[]>(DEFAULT_PACKAGES);
@@ -193,28 +222,90 @@ export default function EpsPoolCalculator() {
     { id: mkId(), type: "Hot Tub",     name: "HT-1", length_ft: 17.75, width_ft: 5.58, waterDepth_ft: 3.5, benchSf: 60, extraSf: 0, handrails: 2, refrigerationLine: false, jets: 8, equipmentPackageKey: "ht-standard", collapsed: true },
   ]);
 
-  const addVessel = (t: VesselType) => {
-    const n = t === "Cold Plunge" ? `CP-${vessels.filter(v => v.type === "Cold Plunge").length + 1}`
-                                  : `HT-${vessels.filter(v => v.type === "Hot Tub").length + 1}`;
-    const fallBack = t === "Cold Plunge" ? "cp-1-2" : "ht-standard";
-    const pkg = packages.find(p => p.appliesTo.includes(t))?.key ?? fallBack;
+  /* Quick Add Modal State */
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickAddType, setQuickAddType] = useState<VesselType>("Cold Plunge");
+  const [quickAddBathers, setQuickAddBathers] = useState(2);
+  const [quickAddLength, setQuickAddLength] = useState(6);
+  const [quickAddWidth, setQuickAddWidth] = useState(4);
+  const [quickAddDepth, setQuickAddDepth] = useState(3.5);
+  const [quickAddName, setQuickAddName] = useState("");
+
+  // Auto-size based on bather load (1 person = 10 sq ft water surface)
+  const autoSizeDimensions = (bathers: number): { length: number; width: number } => {
+    const targetArea = bathers * 10; // 10 sq ft per person
+
+    // Common aspect ratios and configurations
+    if (bathers <= 2) return { length: 6, width: 3.5 };   // 21 sq ft
+    if (bathers <= 3) return { length: 7, width: 4.5 };   // 31.5 sq ft
+    if (bathers <= 4) return { length: 8, width: 5 };     // 40 sq ft
+    if (bathers <= 6) return { length: 10, width: 6 };    // 60 sq ft
+    if (bathers <= 8) return { length: 12, width: 7 };    // 84 sq ft
+    if (bathers <= 10) return { length: 14, width: 7.5 }; // 105 sq ft
+    if (bathers <= 12) return { length: 15, width: 8 };   // 120 sq ft
+
+    // For larger capacities, use a 2:1 aspect ratio
+    const width = Math.sqrt(targetArea / 2);
+    const length = width * 2;
+    return { length: Math.round(length * 2) / 2, width: Math.round(width * 2) / 2 }; // Round to 0.5
+  };
+
+  // Update dimensions when bather count changes
+  React.useEffect(() => {
+    const dims = autoSizeDimensions(quickAddBathers);
+    setQuickAddLength(dims.length);
+    setQuickAddWidth(dims.width);
+  }, [quickAddBathers]);
+
+  const openQuickAdd = (t: VesselType) => {
+    setQuickAddType(t);
+    const nextNum = t === "Cold Plunge"
+      ? vessels.filter(v => v.type === "Cold Plunge").length + 1
+      : vessels.filter(v => v.type === "Hot Tub").length + 1;
+    const prefix = t === "Cold Plunge" ? "CP" : "HT";
+    setQuickAddName(`${prefix}-${nextNum}`);
+    setQuickAddBathers(t === "Cold Plunge" ? 2 : 6);
+    setQuickAddDepth(3.5);
+    setShowQuickAdd(true);
+  };
+
+  const addVesselFromQuickAdd = () => {
+    const fallBack = quickAddType === "Cold Plunge" ? "cp-1-2" : "ht-standard";
+    const pkg = packages.find(p => p.appliesTo.includes(quickAddType))?.key ?? fallBack;
+
     setVessels(v => v.concat({
-      id: mkId(), type: t, name: n,
-      length_ft: t === "Cold Plunge" ? 10 : 8,
-      width_ft : t === "Cold Plunge" ? 3  : 8,
-      waterDepth_ft: 3.5,
-      benchSf: t === "Hot Tub" ? 40 : 0,
+      id: mkId(),
+      type: quickAddType,
+      name: quickAddName,
+      length_ft: quickAddLength,
+      width_ft: quickAddWidth,
+      waterDepth_ft: quickAddDepth,
+      benchSf: quickAddType === "Hot Tub" ? 40 : 0,
       extraSf: 0,
       handrails: 1,
-      refrigerationLine: t === "Cold Plunge",
-      jets: t === "Hot Tub" ? 6 : 0,
+      refrigerationLine: quickAddType === "Cold Plunge",
+      jets: quickAddType === "Hot Tub" ? 6 : 0,
       equipmentPackageKey: pkg,
-      collapsed: true,
+      collapsed: false,
     }));
+    setShowQuickAdd(false);
   };
   const removeVessel = (id: string) => setVessels(v => v.filter(x => x.id !== id));
   const updateVessel = (id: string, patch: Partial<Vessel>) =>
     setVessels(v => v.map(x => (x.id === id ? { ...x, ...patch } : x)));
+  const duplicateVessel = (id: string) => {
+    const vessel = vessels.find(v => v.id === id);
+    if (!vessel) return;
+    const sameType = vessels.filter(v => v.type === vessel.type);
+    const nextNum = sameType.length + 1;
+    const prefix = vessel.type === "Cold Plunge" ? "CP" : "HT";
+    setVessels(v => v.concat({
+      ...vessel,
+      id: mkId(),
+      name: `${prefix}-${nextNum}`,
+      collapsed: false,
+    }));
+  };
 
   /* ---------------------- per-vessel calculations ---------------------- */
   const vesselCalcs = useMemo(() => {
@@ -226,48 +317,166 @@ export default function EpsPoolCalculator() {
       const extraSf = clampN(v.extraSf);
       const finishSf = floorSf + wallSf + benchSf + extraSf;
 
-      // MATERIALS:
-      const materialsEpsBundle = scopeMaterials ? clampN(epsBundlePerSf) * finishSf : 0;
-      const materialsTile      = scopeMaterials ? clampN(tileMaterialsPerSf) * (floorSf + wallSf) : 0;
-      const materialsFfe       = scopeMaterials ? clampN(ffeMaterialsPerVessel) : 0;
+      let materialsEpsBundle = 0, materialsTile = 0, materialsFfe = 0;
+      let materialsStainless = 0, coatingCost = 0, anodeCost = 0;
+
+      if (constructionType === "EPS") {
+        // EPS MATERIALS:
+        materialsEpsBundle = scopeMaterials ? clampN(epsBundlePerSf) * finishSf : 0;
+        materialsTile      = scopeMaterials ? clampN(tileMaterialsPerSf) * (floorSf + wallSf) : 0;
+        materialsFfe       = scopeMaterials ? clampN(ffeMaterialsPerVessel) : 0;
+      } else {
+        // STAINLESS STEEL MATERIALS:
+        if (scopeMaterials) {
+          // Calculate weight: 304L @ 3/16" thick = 7.65 lb/sf (stainless steel density)
+          const weightPerSf = clampN(plateThickness) * 12 * 40.8; // lb/sf for 304L (40.8 lb/ft³)
+          const totalWeight = finishSf * weightPerSf;
+          materialsStainless = totalWeight * clampN(ss304LPricePerLb);
+
+          // Bitumastic exterior coating
+          coatingCost = finishSf * clampN(bitumasticCoatingPerSf);
+
+          // Sacrificial anodes
+          anodeCost = clampN(sacrificialAnodePerVessel);
+
+          // Tile finish (same as EPS)
+          materialsTile = clampN(tileMaterialsPerSf) * (floorSf + wallSf);
+
+          // 316L handrails (estimate 8ft per handrail, polished to 600 grit)
+          const handrailCost = clampN(v.handrails) * 8 * clampN(ss316LPricePerFt);
+          materialsFfe = handrailCost;
+        }
+      }
 
       // EQUIPMENT:
       const pkg = packages.find(p => p.key === v.equipmentPackageKey && p.appliesTo.includes(v.type));
       const equipmentSubtotal = scopeEquipment && pkg ? pkg.items.reduce((s, it) => s + clampN(it.cost), 0) : 0;
 
-      // LABOR:
-      let labor = 0;
-      if (scopeLabor) {
-        labor += clampN(epsWpLaborPerSf) * finishSf;                 // EPS + waterproofing labor
-        labor += clampN(tileLaborPerSf) * (floorSf + wallSf);        // Tile setting labor
-        labor += clampN(ffeLaborPerVessel);                          // FF&E install
-        const interconnect = (v.type === "Hot Tub")
-          ? clampN(equipPlumbPerVessel) * 1.5                         // +50% for hot tubs
-          : clampN(equipPlumbPerVessel);
-        labor += interconnect;
-        labor += clampN(handrailInstallPerEa) * clampN(v.handrails); // optional extra
-        if (v.type === "Cold Plunge" && v.refrigerationLine) labor += clampN(refrigLinePerCP);
-        if (v.type === "Hot Tub" && v.jets > 6) labor += (v.jets - 6) * 100; // simple jet adder
-        labor *= clampN(regionMult);                                  // regional multiplier on labor
+      // ADA TRANSFER WALL / STEEL FRAME (stainless steel only):
+      let adaFrameCost = 0;
+      if (constructionType === "Stainless Steel" && includeAdaFrame && scopeMaterials) {
+        // Calculate perimeter (floor level)
+        const perimeterFt = 2 * (L + W);
+
+        // Calculate vertical studs at 16" on center around perimeter
+        const studSpacing = 16 / 12; // 16" in feet
+        const numStuds = Math.ceil(perimeterFt / studSpacing);
+        const studHeight = D; // From floor to top of vessel (water depth)
+        const totalStudLf = numStuds * studHeight;
+
+        // Top and bottom rails around entire perimeter
+        const railsLf = perimeterFt * 2; // Top + bottom rails
+
+        // Total linear feet of 2" steel tubing
+        const totalSteelLf = totalStudLf + railsLf;
+
+        // Material + fabrication costs
+        const steelMaterialCost = totalSteelLf * clampN(steelTubingPricePerFt);
+        const steelFabCost = totalSteelLf * clampN(steelFabricationPerFt);
+
+        adaFrameCost = steelMaterialCost + steelFabCost;
       }
 
-      const materialsSubtotal = materialsEpsBundle + materialsTile + materialsFfe;
-      const perVesselDirect   = materialsSubtotal + equipmentSubtotal + labor;
+      // LABOR:
+      let vesselInstallLabor = 0, equipmentInterconnectLabor = 0, fabricationLabor = 0, qualityControlCost = 0;
+      if (scopeLabor) {
+        if (constructionType === "EPS") {
+          // EPS LABOR (vessel install):
+          let vesselLabor = 0;
+          vesselLabor += clampN(epsWpLaborPerSf) * finishSf;                 // EPS + waterproofing labor
+          vesselLabor += clampN(tileLaborPerSf) * (floorSf + wallSf);        // Tile setting labor
+          vesselLabor += clampN(ffeLaborPerVessel);                          // FF&E install
+          vesselLabor += clampN(handrailInstallPerEa) * clampN(v.handrails); // optional extra
+          if (v.type === "Cold Plunge" && v.refrigerationLine) vesselLabor += clampN(refrigLinePerCP);
+          if (v.type === "Hot Tub" && v.jets > 6) vesselLabor += (v.jets - 6) * 100; // simple jet adder
+          vesselInstallLabor = vesselLabor * clampN(regionMult);             // regional multiplier on labor
+
+          // Equipment interconnect labor (separate):
+          const interconnect = (v.type === "Hot Tub")
+            ? clampN(equipPlumbPerVessel) * 1.5                         // +50% for hot tubs
+            : clampN(equipPlumbPerVessel);
+          equipmentInterconnectLabor = interconnect * clampN(regionMult);
+        } else {
+          // STAINLESS STEEL FABRICATION LABOR (Mexico):
+          const loadedWelderRate = clampN(tigWelderRatePerHr) * clampN(welderLoadedMult);
+
+          // Calculate weld linear footage (perimeter welds + seams)
+          const perimeterLf = 2 * (L + W);  // floor-to-wall weld
+          const wallCornerLf = 4 * D;        // 4 corner welds
+          const floorSeamsLf = Math.ceil(L / 4) * W; // Plate seams (assume 4ft wide plates)
+          const wallSeamsLf = Math.ceil((2*L + 2*W) / 4) * D; // Wall plate seams
+          const totalWeldLf = perimeterLf + wallCornerLf + floorSeamsLf + wallSeamsLf;
+
+          // Welding labor (TIG)
+          const weldingHours = totalWeldLf * clampN(weldingTimePerLf);
+          const weldingCost = weldingHours * loadedWelderRate;
+
+          // Grinding/finishing labor
+          const grindingHours = totalWeldLf * clampN(grindingTimePerLf);
+          const grindingCost = grindingHours * loadedWelderRate * 0.85; // Slightly lower rate for grinding
+
+          // 316L handrail polishing (600 grit)
+          const handrailLf = clampN(v.handrails) * 8;
+          const polishingHours = handrailLf * clampN(polishingTimePerLf);
+          const polishingCost = polishingHours * loadedWelderRate;
+
+          // Passivation & cleaning
+          const passivationCost = finishSf * clampN(passivationPerSf);
+
+          fabricationLabor = weldingCost + grindingCost + polishingCost + passivationCost;
+
+          // Tile installation labor (same as EPS)
+          const tileLaborCost = clampN(tileLaborPerSf) * (floorSf + wallSf);
+
+          vesselInstallLabor = fabricationLabor + tileLaborCost;
+
+          // Equipment interconnect (separate, same as EPS):
+          const interconnect = (v.type === "Hot Tub")
+            ? clampN(equipPlumbPerVessel) * 1.5
+            : clampN(equipPlumbPerVessel);
+          equipmentInterconnectLabor = interconnect;
+
+          // Quality control & testing
+          qualityControlCost = clampN(leakTestPerVessel) + clampN(qualityCertPerVessel);
+        }
+      }
+
+      const labor = vesselInstallLabor + equipmentInterconnectLabor;
+
+      const materialsSubtotal = constructionType === "EPS"
+        ? materialsEpsBundle + materialsTile + materialsFfe + adaFrameCost
+        : materialsStainless + coatingCost + anodeCost + materialsTile + materialsFfe + adaFrameCost;
+      const perVesselDirect   = materialsSubtotal + equipmentSubtotal + labor + qualityControlCost;
 
       return {
         vessel: v,
         areas: { floorSf, wallSf, benchSf, extraSf, finishSf },
-        materials: { materialsEpsBundle, materialsTile, materialsFfe },
+        materials: constructionType === "EPS"
+          ? { materialsEpsBundle, materialsTile, materialsFfe, adaFrameCost }
+          : { materialsStainless, coatingCost, anodeCost, materialsTile, materialsFfe, adaFrameCost },
         equipmentSubtotal,
         laborSubtotal: labor,
+        vesselInstallLabor, // Separated vessel install labor
+        equipmentInterconnectLabor, // Separated equipment interconnect labor
+        fabricationLabor, // SS-specific
+        qualityControlCost, // SS-specific
+        adaFrameCost, // ADA frame if enabled
         perVesselDirect,
       };
     });
   }, [
     vessels,
+    constructionType,
     scopeMaterials, scopeLabor, scopeEquipment,
+    // EPS params
     epsBundlePerSf, tileMaterialsPerSf, ffeMaterialsPerVessel,
     epsWpLaborPerSf, tileLaborPerSf, ffeLaborPerVessel, equipPlumbPerVessel, handrailInstallPerEa, refrigLinePerCP, regionMult,
+    // SS params
+    ss304LPricePerLb, ss316LPricePerFt, plateThickness, bitumasticCoatingPerSf, sacrificialAnodePerVessel,
+    tigWelderRatePerHr, welderLoadedMult, weldingTimePerLf, grindingTimePerLf, polishingTimePerLf, passivationPerSf,
+    leakTestPerVessel, qualityCertPerVessel,
+    // ADA frame params
+    includeAdaFrame, steelTubingPricePerFt, steelFabricationPerFt,
     packages
   ]);
 
@@ -275,9 +484,17 @@ export default function EpsPoolCalculator() {
   const project = useMemo(() => {
     // Direct vessel sums
     const finishSfTotal = vesselCalcs.reduce((s, c) => s + c.areas.finishSf, 0);
-    const materialsTotal = vesselCalcs.reduce((s, c) => s + (c.materials.materialsEpsBundle + c.materials.materialsTile + c.materials.materialsFfe), 0);
+    const materialsTotal = vesselCalcs.reduce((s, c) => {
+      const mats = c.materials as any;
+      if (constructionType === "EPS") {
+        return s + (mats.materialsEpsBundle + mats.materialsTile + mats.materialsFfe + (mats.adaFrameCost || 0));
+      } else {
+        return s + (mats.materialsStainless + mats.coatingCost + mats.anodeCost + mats.materialsTile + mats.materialsFfe + (mats.adaFrameCost || 0));
+      }
+    }, 0);
     const equipmentSubtotalVessels = vesselCalcs.reduce((s, c) => s + c.equipmentSubtotal, 0);
     const laborSubtotal = vesselCalcs.reduce((s, c) => s + c.laborSubtotal, 0);
+    const qualityControlTotal = vesselCalcs.reduce((s, c) => s + (c.qualityControlCost || 0), 0);
     const sumPreAllocBase = vesselCalcs.reduce((s, c) => s + c.perVesselDirect, 0) || 1;
 
     // Project-level softs
@@ -339,6 +556,59 @@ export default function EpsPoolCalculator() {
       clientTotal: perVesselClient[i],
     }));
 
+    // Consolidated scope breakdown (4 categories) - Base costs before markups
+    const vesselInstallLaborTotal = vesselCalcs.reduce((s, c) => s + (c.vesselInstallLabor || 0), 0);
+    const equipmentInterconnectLaborTotal = vesselCalcs.reduce((s, c) => s + (c.equipmentInterconnectLabor || 0), 0);
+
+    const vesselAndInstallBaseCost = materialsTotal + vesselInstallLaborTotal + qualityControlTotal; // Vessel materials + vessel install labor + QC
+    const equipmentAndInstallBaseCost = equipmentSubtotalVessels + chemStorage + equipmentInterconnectLaborTotal + startup; // Equipment + chem storage + interconnect labor + startup
+    const freightHandlingBaseCost = freightTotal + rigging; // Freight + handling + rigging
+    const designEngineeringBaseCost = designEngineering + repFee; // Design/eng + rep onsite
+
+    const totalBaseCost = vesselAndInstallBaseCost + equipmentAndInstallBaseCost + freightHandlingBaseCost + designEngineeringBaseCost;
+
+    // Distribute markups (contingency, waste, OH&P, warranty) proportionally across all categories
+    const markupsTotal = designContAmount + wasteAmount + ohpAmount + warrantyReserve;
+
+    const vesselAndInstallCost = vesselAndInstallBaseCost + (markupsTotal * (vesselAndInstallBaseCost / totalBaseCost));
+    const equipmentAndInstallCost = equipmentAndInstallBaseCost + (markupsTotal * (equipmentAndInstallBaseCost / totalBaseCost));
+    const freightHandlingCost = freightHandlingBaseCost + (markupsTotal * (freightHandlingBaseCost / totalBaseCost));
+    const designEngineeringCost = designEngineeringBaseCost + (markupsTotal * (designEngineeringBaseCost / totalBaseCost));
+
+    const scopeBreakdown = clientPrice > 0 ? {
+      // Consolidated categories
+      vesselAndInstall: {
+        cost: vesselAndInstallCost,
+        pct: (vesselAndInstallCost / clientPrice) * 100,
+      },
+      equipmentAndInstall: {
+        cost: equipmentAndInstallCost,
+        pct: (equipmentAndInstallCost / clientPrice) * 100,
+      },
+      freightHandling: {
+        cost: freightHandlingCost,
+        pct: (freightHandlingCost / clientPrice) * 100,
+      },
+      designEngineering: {
+        cost: designEngineeringCost,
+        pct: (designEngineeringCost / clientPrice) * 100,
+      },
+    } : null;
+
+    // Per-vessel breakdown (allocate consolidated costs proportionally)
+    const perVesselBreakdown = vesselCalcs.map((c, i) => {
+      const vesselShare = perVesselClient[i] / clientPrice;
+      return {
+        id: c.vessel.id,
+        name: c.vessel.name,
+        vesselAndInstall: vesselAndInstallCost * vesselShare,
+        equipmentAndInstall: equipmentAndInstallCost * vesselShare,
+        freightHandling: freightHandlingCost * vesselShare,
+        designEngineering: designEngineeringCost * vesselShare,
+        total: perVesselClient[i],
+      };
+    });
+
     return {
       // areas
       finishSfTotal,
@@ -356,6 +626,9 @@ export default function EpsPoolCalculator() {
       clientPrice, profit, grossMarginPct, effectivePerSf,
       // per-vessel
       perVesselRows,
+      // scope breakdown
+      scopeBreakdown,
+      perVesselBreakdown,
     };
   }, [
     vesselCalcs, vessels.length,
@@ -371,6 +644,26 @@ export default function EpsPoolCalculator() {
   /* ------------------------------- UI -------------------------------- */
   return (
     <div style={{ display: "grid", gap: 16 }}>
+      {/* Construction Type Selector */}
+      <Card title="Construction Type">
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", border: constructionType === "EPS" ? "2px solid #3b82f6" : "1px solid #d1d5db", borderRadius: 10, background: constructionType === "EPS" ? "#eff6ff" : "#fff", cursor: "pointer" }}>
+            <input type="radio" checked={constructionType === "EPS"} onChange={() => setConstructionType("EPS")} />
+            <div>
+              <div style={{ fontWeight: 600 }}>EPS Construction</div>
+              <div style={{ fontSize: 12, color: "#6b7280" }}>Foam vessel with tile finish</div>
+            </div>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", border: constructionType === "Stainless Steel" ? "2px solid #3b82f6" : "1px solid #d1d5db", borderRadius: 10, background: constructionType === "Stainless Steel" ? "#eff6ff" : "#fff", cursor: "pointer" }}>
+            <input type="radio" checked={constructionType === "Stainless Steel"} onChange={() => setConstructionType("Stainless Steel")} />
+            <div>
+              <div style={{ fontWeight: 600 }}>Stainless Steel</div>
+              <div style={{ fontSize: 12, color: "#6b7280" }}>304L/316L fabricated in Mexico</div>
+            </div>
+          </label>
+        </div>
+      </Card>
+
       {/* Top controls row */}
       <GridCols cols={3}>
         <Card title="Scopes" tight>
@@ -386,77 +679,142 @@ export default function EpsPoolCalculator() {
         </Card>
 
         <Card title="OH&P, Waste, Warranty & Contingency" tight>
-          <Row label="OH&P (%)"><Num value={ohpPct} onChange={setOhpPct} step={0.5} /></Row>
-          <Row label="Waste (%)"><Num value={wastePct} onChange={setWastePct} step={0.5} /></Row>
-          <Row label="Warranty (% of client)"><Num value={warrantyPctOfClient} onChange={setWarrantyPctOfClient} step={0.1} /></Row>
-          <Row label="Design development contingency (%)"><Num value={designContPct} onChange={setDesignContPct} step={0.5} /></Row>
+          <Row label="OH&P (%)"><Num value={ohpPct} onChange={setOhpPct} step={0.5} min={0} max={100} title="Overhead & Profit percentage" /></Row>
+          <Row label="Waste (%)"><Num value={wastePct} onChange={setWastePct} step={0.5} min={0} max={100} title="Material waste and inefficiency percentage" /></Row>
+          <Row label="Warranty (% of client)"><Num value={warrantyPctOfClient} onChange={setWarrantyPctOfClient} step={0.1} min={0} max={100} title="Warranty reserve as percentage of total client price" /></Row>
+          <Row label="Design development contingency (%)"><Num value={designContPct} onChange={setDesignContPct} step={0.5} min={0} max={100} title="Buffer for scope changes and unknowns" /></Row>
         </Card>
 
         <Card title="Design & Engineering" tight>
-          <Row label="Design base ($)"><Num value={designBase} onChange={setDesignBase} step={500} /></Row>
-          <Row label="Complexity multiplier (×)"><Num value={designMult} onChange={setDesignMult} step={0.05} /></Row>
+          <Row label="Design base ($)"><Num value={designBase} onChange={setDesignBase} step={500} min={0} title="Base design & engineering cost for DOH and permit-ready drawings" /></Row>
+          <Row label="Complexity multiplier (×)"><Num value={designMult} onChange={setDesignMult} step={0.05} min={0} title="Adjust for project complexity (1.0 = standard, >1.0 = more complex)" /></Row>
         </Card>
       </GridCols>
 
       {/* Materials / Labor / Freight */}
       <GridCols cols={3}>
-        <Card title="Materials (per-SF / per-vessel)">
-          <Row label="EPS Vessel Materials ($/sf)">
-            <Num value={epsBundlePerSf} onChange={setEpsBundlePerSf} step={0.25} />
-          </Row>
-          <Row label="Tile & Setting Materials ($/sf)">
-            <Num value={tileMaterialsPerSf} onChange={setTileMaterialsPerSf} step={0.5} />
-          </Row>
-          <Row label="FF&E Materials ($/vessel)">
-            <Num value={ffeMaterialsPerVessel} onChange={setFfeMaterialsPerVessel} step={50} />
-          </Row>
-        </Card>
+        {constructionType === "EPS" ? (
+          <Card title="Materials (per-SF / per-vessel)">
+            <Row label="EPS Vessel Materials ($/sf)">
+              <Num value={epsBundlePerSf} onChange={setEpsBundlePerSf} step={0.25} min={0} title="EPS foam, adhesives, mesh, Basecrete/membrane per square foot" />
+            </Row>
+            <Row label="Tile & Setting Materials ($/sf)">
+              <Num value={tileMaterialsPerSf} onChange={setTileMaterialsPerSf} step={0.5} min={0} title="Tile, thinset, grout, and sundries per square foot" />
+            </Row>
+            <Row label="FF&E Materials ($/vessel)">
+              <Num value={ffeMaterialsPerVessel} onChange={setFfeMaterialsPerVessel} step={50} min={0} title="Handrails, markers, and DOH safety kit per vessel" />
+            </Row>
+          </Card>
+        ) : (
+          <Card title="Stainless Steel Materials">
+            <Row label="304L Plate ($/lb)">
+              <Num value={ss304LPricePerLb} onChange={setSs304LPricePerLb} step={0.05} min={0} title="304L stainless steel plate price per pound (Mexican sourced)" />
+            </Row>
+            <Row label="316L Tubing ($/ft)">
+              <Num value={ss316LPricePerFt} onChange={setSs316LPricePerFt} step={0.5} min={0} title="316L stainless tubing/pipe for handrails per linear foot" />
+            </Row>
+            <Row label="Plate Thickness (inches)">
+              <Num value={plateThickness} onChange={setPlateThickness} step={0.0625} min={0.0625} title="Plate thickness in inches (3/16 inch = 0.1875)" />
+            </Row>
+            <Row label="Bitumastic Coating ($/sf)">
+              <Num value={bitumasticCoatingPerSf} onChange={setBitumasticCoatingPerSf} step={0.25} min={0} title="Exterior coating per square foot" />
+            </Row>
+            <Row label="Sacrificial Anodes ($/vessel)">
+              <Num value={sacrificialAnodePerVessel} onChange={setSacrificialAnodePerVessel} step={50} min={0} title="Magnesium anodes for corrosion protection" />
+            </Row>
+            <Row label="ADA Transfer Wall / Steel Frame">
+              <label><input type="checkbox" checked={includeAdaFrame} onChange={e=>setIncludeAdaFrame(e.target.checked)} /> Include 2&quot; steel tubing frame</label>
+            </Row>
+            {includeAdaFrame && (
+              <>
+                <Row label="Steel Tubing ($/ft)">
+                  <Num value={steelTubingPricePerFt} onChange={setSteelTubingPricePerFt} step={0.25} min={0} title="2 inch mild steel tubing price per linear foot" />
+                </Row>
+                <Row label="Steel Fabrication ($/ft)">
+                  <Num value={steelFabricationPerFt} onChange={setSteelFabricationPerFt} step={0.5} min={0} title="Welding and fabrication cost per linear foot" />
+                </Row>
+              </>
+            )}
+          </Card>
+        )}
 
-        <Card title="Labor (per-SF / per-vessel)">
-          <Row label="EPS + Waterproofing Labor ($/sf)">
-            <Num value={epsWpLaborPerSf} onChange={setEpsWpLaborPerSf} step={1} />
-          </Row>
-          <Row label="Tile Install Labor ($/sf)">
-            <Num value={tileLaborPerSf} onChange={setTileLaborPerSf} step={1} />
-          </Row>
-          <Row label="FF&E Labor ($/vessel)">
-            <Num value={ffeLaborPerVessel} onChange={setFfeLaborPerVessel} step={50} />
-          </Row>
-          <Row label="Equip & Interconnect ($/vessel — HT = 1.5×)">
-            <Num value={equipPlumbPerVessel} onChange={setEquipPlumbPerVessel} step={250} />
-          </Row>
-          <Row label="Refrigeration Line (CP only)">
-            <Num value={refrigLinePerCP} onChange={setRefrigLinePerCP} step={50} />
-          </Row>
-          <Row label="Rep Onsite (project)">
-            <Num value={repOnsiteFee} onChange={setRepOnsiteFee} step={100} />
-          </Row>
-          <Row label="Startup / Commissioning (project)">
-            <Num value={startupLump} onChange={setStartupLump} step={100} />
-          </Row>
-          <Row label="Region multiplier (×)">
-            <Num value={regionMult} onChange={setRegionMult} step={0.01} />
-          </Row>
-          <Row label="Include Rigging?">
-            <label><input type="checkbox" checked={includeRigging} onChange={e=>setIncludeRigging(e.target.checked)} /> Yes</label>
-          </Row>
-          <Row label="Rigging ($/vessel)">
-            <Num value={riggingPerVessel} onChange={setRiggingPerVessel} step={100} />
-          </Row>
-        </Card>
+        {constructionType === "EPS" ? (
+          <Card title="Labor (per-SF / per-vessel)">
+            <Row label="EPS + Waterproofing Labor ($/sf)">
+              <Num value={epsWpLaborPerSf} onChange={setEpsWpLaborPerSf} step={1} min={0} title="Fabrication and membrane application labor per square foot" />
+            </Row>
+            <Row label="Tile Install Labor ($/sf)">
+              <Num value={tileLaborPerSf} onChange={setTileLaborPerSf} step={1} min={0} title="Tile setting and grouting labor per square foot" />
+            </Row>
+            <Row label="FF&E Labor ($/vessel)">
+              <Num value={ffeLaborPerVessel} onChange={setFfeLaborPerVessel} step={50} min={0} title="Install handrails, signage, safety equipment (3-4 hrs at loaded rate)" />
+            </Row>
+            <Row label="Equip & Interconnect ($/vessel — HT = 1.5×)">
+              <Num value={equipPlumbPerVessel} onChange={setEquipPlumbPerVessel} step={250} min={0} title="Equipment placement and plumbing interconnect (Hot Tubs get 1.5× multiplier)" />
+            </Row>
+            <Row label="Refrigeration Line (CP only)">
+              <Num value={refrigLinePerCP} onChange={setRefrigLinePerCP} step={50} min={0} title="Run and insulate refrigeration lines for Cold Plunge" />
+            </Row>
+            <Row label="Rep Onsite (project)">
+              <Num value={repOnsiteFee} onChange={setRepOnsiteFee} step={100} min={0} title="On-site representative fee for the entire project" />
+            </Row>
+            <Row label="Startup / Commissioning (project)">
+              <Num value={startupLump} onChange={setStartupLump} step={100} min={0} title="Technician time and system balancing for project" />
+            </Row>
+            <Row label="Region multiplier (×)">
+              <Num value={regionMult} onChange={setRegionMult} step={0.01} min={0} title="Regional cost adjustment multiplier for labor and freight (1.0 = baseline)" />
+            </Row>
+            <Row label="Include Rigging?">
+              <label><input type="checkbox" checked={includeRigging} onChange={e=>setIncludeRigging(e.target.checked)} /> Yes</label>
+            </Row>
+            <Row label="Rigging ($/vessel)">
+              <Num value={riggingPerVessel} onChange={setRiggingPerVessel} step={100} min={0} title="Crane or forklift placement cost per vessel" />
+            </Row>
+          </Card>
+        ) : (
+          <Card title="Fabrication Labor (Mexico)">
+            <Row label="TIG Welder Rate ($/hr)">
+              <Num value={tigWelderRatePerHr} onChange={setTigWelderRatePerHr} step={0.5} min={0} title="AWS D1.6 certified TIG welder hourly rate (Mexico)" />
+            </Row>
+            <Row label="Loaded Rate Multiplier (×)">
+              <Num value={welderLoadedMult} onChange={setWelderLoadedMult} step={0.05} min={1} title="Multiplier for benefits, overhead, etc. (typically 1.5-1.8)" />
+            </Row>
+            <Row label="TIG Welding (hrs/LF)">
+              <Num value={weldingTimePerLf} onChange={setWeldingTimePerLf} step={0.01} min={0} title="Hours per linear foot of TIG weld" />
+            </Row>
+            <Row label="Grinding/Finishing (hrs/LF)">
+              <Num value={grindingTimePerLf} onChange={setGrindingTimePerLf} step={0.01} min={0} title="Hours per linear foot for grinding welds smooth" />
+            </Row>
+            <Row label="316L Polishing (hrs/LF)">
+              <Num value={polishingTimePerLf} onChange={setPolishingTimePerLf} step={0.01} min={0} title="Hours per LF to polish 316L to 600 grit" />
+            </Row>
+            <Row label="Passivation ($/sf)">
+              <Num value={passivationPerSf} onChange={setPassivationPerSf} step={0.1} min={0} title="Chemical cleaning and passivation per square foot" />
+            </Row>
+            <Row label="Leak Testing ($/vessel)">
+              <Num value={leakTestPerVessel} onChange={setLeakTestPerVessel} step={50} min={0} title="Leak testing cost per vessel" />
+            </Row>
+            <Row label="Quality Certification ($/vessel)">
+              <Num value={qualityCertPerVessel} onChange={setQualityCertPerVessel} step={50} min={0} title="AWS certification and QC documentation" />
+            </Row>
+            <Row label="Equip & Interconnect ($/vessel — HT = 1.5×)">
+              <Num value={equipPlumbPerVessel} onChange={setEquipPlumbPerVessel} step={250} min={0} title="Equipment placement and plumbing interconnect" />
+            </Row>
+          </Card>
+        )}
 
         <Card title="Freight / Delivery">
-          <Row label="Distance (mi)"><Num value={miles} onChange={setMiles} /></Row>
-          <Row label="Rate ($/mi)"><Num value={dollarsPerMile} onChange={setDollarsPerMile} step={0.05} /></Row>
-          <Row label="Handling per vessel ($)"><Num value={handlingPerVessel} onChange={setHandlingPerVessel} step={50} /></Row>
+          <Row label="Distance (mi)"><Num value={miles} onChange={setMiles} min={0} title="Distance to job site in miles" /></Row>
+          <Row label="Rate ($/mi)"><Num value={dollarsPerMile} onChange={setDollarsPerMile} step={0.05} min={0} title="Line-haul rate per mile" /></Row>
+          <Row label="Handling per vessel ($)"><Num value={handlingPerVessel} onChange={setHandlingPerVessel} step={50} min={0} title="Loading/unloading handling fee per vessel" /></Row>
         </Card>
       </GridCols>
 
       {/* Vessels */}
       <Card title="Vessels">
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <button onClick={() => addVessel("Cold Plunge")} style={btn}>+ Cold Plunge</button>
-          <button onClick={() => addVessel("Hot Tub")} style={btn}>+ Hot Tub</button>
+          <button onClick={() => openQuickAdd("Cold Plunge")} style={{...btn, fontWeight: 600, background: "#3b82f6", color: "#fff", border: "1px solid #2563eb"}}>+ Cold Plunge</button>
+          <button onClick={() => openQuickAdd("Hot Tub")} style={{...btn, fontWeight: 600, background: "#ef4444", color: "#fff", border: "1px solid #dc2626"}}>+ Hot Tub</button>
         </div>
 
         {vessels.map((v) => {
@@ -485,6 +843,7 @@ export default function EpsPoolCalculator() {
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   {headerRight}
+                  <button onClick={() => duplicateVessel(v.id)} style={btn} title="Duplicate this vessel">Duplicate</button>
                   <button onClick={() => removeVessel(v.id)} style={dangerBtn}>Remove</button>
                 </div>
               </div>
@@ -495,21 +854,21 @@ export default function EpsPoolCalculator() {
                     <Row label="Name">
                       <input value={v.name} onChange={e => updateVessel(v.id, { name: e.target.value })} style={input} />
                     </Row>
-                    <Row label="Inside length (ft)"><Num value={v.length_ft} onChange={n => updateVessel(v.id, { length_ft: n })} step={0.1} /></Row>
-                    <Row label="Inside width (ft)"><Num value={v.width_ft} onChange={n => updateVessel(v.id, { width_ft: n })} step={0.1} /></Row>
-                    <Row label="Water depth (ft)"><Num value={v.waterDepth_ft} onChange={n => updateVessel(v.id, { waterDepth_ft: n })} step={0.1} /></Row>
+                    <Row label="Inside length (ft)"><Num value={v.length_ft} onChange={n => updateVessel(v.id, { length_ft: n })} step={0.1} min={0.1} title="Interior length of vessel in feet" /></Row>
+                    <Row label="Inside width (ft)"><Num value={v.width_ft} onChange={n => updateVessel(v.id, { width_ft: n })} step={0.1} min={0.1} title="Interior width of vessel in feet" /></Row>
+                    <Row label="Water depth (ft)"><Num value={v.waterDepth_ft} onChange={n => updateVessel(v.id, { waterDepth_ft: n })} step={0.1} min={0.1} title="Water depth in feet (affects wall surface area)" /></Row>
                   </div>
                   <div>
-                    <Row label="Bench / steps surface (sf)"><Num value={v.benchSf} onChange={n => updateVessel(v.id, { benchSf: n })} /></Row>
-                    <Row label="Extra surface (sf)"><Num value={v.extraSf} onChange={n => updateVessel(v.id, { extraSf: n })} /></Row>
-                    <Row label="Handrails (ea)"><Num value={v.handrails} onChange={n => updateVessel(v.id, { handrails: n })} /></Row>
+                    <Row label="Bench / steps surface (sf)"><Num value={v.benchSf} onChange={n => updateVessel(v.id, { benchSf: n })} min={0} title="Additional surface area for benches and steps in square feet" /></Row>
+                    <Row label="Extra surface (sf)"><Num value={v.extraSf} onChange={n => updateVessel(v.id, { extraSf: n })} min={0} title="Any additional custom surface area in square feet" /></Row>
+                    <Row label="Handrails (ea)"><Num value={v.handrails} onChange={n => updateVessel(v.id, { handrails: n })} min={0} title="Number of handrails to install" /></Row>
                     {v.type === "Cold Plunge" && (
                       <Row label="Refrigeration line set">
                         <label><input type="checkbox" checked={v.refrigerationLine} onChange={e => updateVessel(v.id, { refrigerationLine: e.target.checked })} /> Include</label>
                       </Row>
                     )}
                     {v.type === "Hot Tub" && (
-                      <Row label="Jets (install complexity)"><Num value={v.jets} onChange={n => updateVessel(v.id, { jets: n })} /></Row>
+                      <Row label="Jets (install complexity)"><Num value={v.jets} onChange={n => updateVessel(v.id, { jets: n })} min={0} title="Number of jets (>6 adds $100 labor per extra jet)" /></Row>
                     )}
                   </div>
                   <div>
@@ -527,7 +886,11 @@ export default function EpsPoolCalculator() {
                     <div style={{ fontSize: 12, color: "#6b7280", marginTop: 8 }}>
                       Areas — Floor: <b>{fmt(c.areas.floorSf)} sf</b>, Walls: <b>{fmt(c.areas.wallSf)} sf</b>, Benches/Steps: <b>{fmt(c.areas.benchSf)} sf</b>, Extra: <b>{fmt(c.areas.extraSf)} sf</b>, Finish total: <b>{fmt(c.areas.finishSf)} sf</b>
                       <br />
-                      Subtotals — Materials: <b>${fmt(c.materials.materialsEpsBundle + c.materials.materialsTile + c.materials.materialsFfe)}</b> | Equipment: <b>${fmt(c.equipmentSubtotal)}</b> | Labor: <b>${fmt(c.laborSubtotal)}</b>
+                      Subtotals — Materials: <b>${fmt(
+                        constructionType === "EPS"
+                          ? (c.materials as any).materialsEpsBundle + (c.materials as any).materialsTile + (c.materials as any).materialsFfe + ((c.materials as any).adaFrameCost || 0)
+                          : (c.materials as any).materialsStainless + (c.materials as any).coatingCost + (c.materials as any).anodeCost + (c.materials as any).materialsTile + (c.materials as any).materialsFfe + ((c.materials as any).adaFrameCost || 0)
+                      )}</b> | Equipment: <b>${fmt(c.equipmentSubtotal)}</b> | Labor: <b>${fmt(c.laborSubtotal)}</b>
                     </div>
                   </div>
                 </div>
@@ -615,6 +978,163 @@ export default function EpsPoolCalculator() {
           </div>
         </Card>
       </details>
+
+      {/* Consolidated Scope Breakdown */}
+      {project.scopeBreakdown && (
+        <Card title="Cost Breakdown by Category">
+          {/* Project-Level Breakdown */}
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 15 }}>Project Total</div>
+            <div style={{ marginBottom: 16, padding: 12, background: "#f9fafb", borderRadius: 10 }}>
+              {[
+                { label: 'Vessel & Vessel Install', pct: project.scopeBreakdown.vesselAndInstall.pct, cost: project.scopeBreakdown.vesselAndInstall.cost, color: '#3b82f6' },
+                { label: 'Equipment & Equipment Install', pct: project.scopeBreakdown.equipmentAndInstall.pct, cost: project.scopeBreakdown.equipmentAndInstall.cost, color: '#8b5cf6' },
+                { label: 'Freight / Handling', pct: project.scopeBreakdown.freightHandling.pct, cost: project.scopeBreakdown.freightHandling.cost, color: '#10b981' },
+                { label: 'Design / Engineering', pct: project.scopeBreakdown.designEngineering.pct, cost: project.scopeBreakdown.designEngineering.cost, color: '#ef4444' },
+              ].map((item, idx) => (
+                <div key={idx} style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
+                    <span style={{ color: '#374151', fontWeight: 600 }}>{item.label}</span>
+                    <span style={{ fontWeight: 600, color: '#111827' }}>${fmt(item.cost)} ({fmt(item.pct)}%)</span>
+                  </div>
+                  <div style={{ height: 24, background: '#e5e7eb', borderRadius: 6, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', background: item.color, width: `${Math.min(item.pct, 100)}%`, transition: 'width 0.3s ease', display: 'flex', alignItems: 'center', paddingLeft: 8, color: '#fff', fontSize: 11, fontWeight: 600 }}>
+                      {item.pct > 8 && `${fmt(item.pct)}%`}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Per-Vessel Breakdown */}
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 15 }}>Per-Vessel Breakdown</div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "#f9fafb" }}>
+                    <th style={thLeft}>Vessel</th>
+                    <th style={th}>Vessel & Install</th>
+                    <th style={th}>Equipment & Install</th>
+                    <th style={th}>Freight/Handling</th>
+                    <th style={th}>Design/Eng</th>
+                    <th style={th}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {project.perVesselBreakdown.map((r) => (
+                    <tr key={r.id}>
+                      <td style={tdLeft}><strong>{r.name}</strong></td>
+                      <td style={tdMoney}>${fmt(r.vesselAndInstall)}</td>
+                      <td style={tdMoney}>${fmt(r.equipmentAndInstall)}</td>
+                      <td style={tdMoney}>${fmt(r.freightHandling)}</td>
+                      <td style={tdMoney}>${fmt(r.designEngineering)}</td>
+                      <td style={{ ...tdMoney, fontWeight: 700, borderLeft: '2px solid #e5e7eb' }}>${fmt(r.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Quick Add Modal */}
+      {showQuickAdd && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 500, width: "90%", maxHeight: "90vh", overflow: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <h2 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>Add {quickAddType}</h2>
+              <button onClick={() => setShowQuickAdd(false)} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", padding: 4 }}>×</button>
+            </div>
+
+            <div style={{ display: "grid", gap: 16 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Vessel Name</label>
+                <input
+                  type="text"
+                  value={quickAddName}
+                  onChange={e => setQuickAddName(e.target.value)}
+                  style={{ width: "100%", padding: "10px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14 }}
+                  placeholder="e.g., CP-1"
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
+                  Bather Capacity <span style={{ fontSize: 12, fontWeight: 400, color: "#6b7280" }}>(1 person = 10 sq ft)</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={quickAddBathers}
+                  onChange={e => setQuickAddBathers(Number(e.target.value))}
+                  style={{ width: "100%", padding: "10px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14 }}
+                />
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+                  Target area: {fmt(quickAddBathers * 10)} sq ft
+                </div>
+              </div>
+
+              <div style={{ background: "#f9fafb", padding: 12, borderRadius: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "#374151" }}>Suggested Dimensions</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Length (ft)</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      value={quickAddLength}
+                      onChange={e => setQuickAddLength(Number(e.target.value))}
+                      style={{ width: "100%", padding: "8px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Width (ft)</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      value={quickAddWidth}
+                      onChange={e => setQuickAddWidth(Number(e.target.value))}
+                      style={{ width: "100%", padding: "8px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Depth (ft)</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      value={quickAddDepth}
+                      onChange={e => setQuickAddDepth(Number(e.target.value))}
+                      style={{ width: "100%", padding: "8px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14 }}
+                    />
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 8 }}>
+                  Actual floor area: <strong>{fmt(quickAddLength * quickAddWidth)} sq ft</strong> = <strong>{fmt((quickAddLength * quickAddWidth) / 10)} persons</strong>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button
+                  onClick={() => setShowQuickAdd(false)}
+                  style={{ flex: 1, padding: "10px 16px", border: "1px solid #d1d5db", borderRadius: 8, background: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 600 }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={addVesselFromQuickAdd}
+                  style={{ flex: 1, padding: "10px 16px", border: "none", borderRadius: 8, background: quickAddType === "Cold Plunge" ? "#3b82f6" : "#ef4444", color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 600 }}
+                >
+                  Add Vessel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Summary */}
       <GridCols cols={2}>

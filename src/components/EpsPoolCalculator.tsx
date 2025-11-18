@@ -507,34 +507,50 @@ export default function EpsPoolCalculator() {
     const chemStorage = scopeEquipment && useProjectChemicalStorage ? clampN(projectChemicalStorageCost) : 0;
     const rigging = (scopeLabor && includeRigging) ? clampN(riggingPerVessel) * vessels.length : 0;
 
-    // Allocate project-level softs to vessels by cost share
+    // Separate construction costs from pass-through costs
+    // Construction costs (subject to contingency, waste, OH&P): materials, labor, equipment, startup, chem storage
+    // Pass-through costs (NOT subject to OH&P): freight, rigging, design/eng, rep fee
+
+    const constructionCostsPerVessel = vesselCalcs.map(c => c.perVesselDirect); // materials + equipment + labor per vessel
+    const totalConstructionBase = constructionCostsPerVessel.reduce((s, n) => s + n, 0);
+
+    // Allocate startup and chem storage to construction (subject to OH&P)
     const allocShares = vesselCalcs.map(c => c.perVesselDirect / sumPreAllocBase);
-    const perVesselPreContBase = vesselCalcs.map((c, i) =>
-      c.perVesselDirect +
-      allocShares[i] * (freightTotal + designEngineering + repFee + startup + chemStorage + rigging)
+    const perVesselConstruction = constructionCostsPerVessel.map((base, i) =>
+      base + allocShares[i] * (startup + chemStorage)
     );
 
-    // Design Development Contingency
-    const baseBeforeCont = perVesselPreContBase.reduce((s, n) => s + n, 0);
-    const contRate = scopeDesignCont ? clampN(designContPct) / 100 : 0;
-    const designContAmount = baseBeforeCont * contRate;
-    const perVesselCont = perVesselPreContBase.map(b => (b / (baseBeforeCont || 1)) * designContAmount);
+    // Allocate pass-through costs (NOT subject to OH&P)
+    const perVesselPassThrough = allocShares.map(share =>
+      share * (freightTotal + rigging + designEngineering + repFee)
+    );
 
-    // Waste & OH&P
+    // Design Development Contingency (only on construction costs)
+    const constructionBeforeCont = perVesselConstruction.reduce((s, n) => s + n, 0);
+    const contRate = scopeDesignCont ? clampN(designContPct) / 100 : 0;
+    const designContAmount = constructionBeforeCont * contRate;
+    const perVesselCont = perVesselConstruction.map(b => (b / (constructionBeforeCont || 1)) * designContAmount);
+
+    // Waste & OH&P (only on construction costs)
     const wasteRate = clampN(wastePct) / 100;
     const ohpRate   = clampN(ohpPct) / 100;
-    const perVesselBasePlusCont = perVesselPreContBase.map((b, i) => b + perVesselCont[i]);
-    const perVesselWaste = perVesselBasePlusCont.map(b => b * wasteRate);
-    const perVesselOhp   = perVesselBasePlusCont.map(b => b * ohpRate);
+    const perVesselConstructionPlusCont = perVesselConstruction.map((b, i) => b + perVesselCont[i]);
+    const perVesselWaste = perVesselConstructionPlusCont.map(b => b * wasteRate);
+    const perVesselOhp   = perVesselConstructionPlusCont.map(b => b * ohpRate);
+
+    // Combine construction (with markups) + pass-through costs
+    const perVesselPreWarranty = perVesselConstructionPlusCont.map((construction, i) =>
+      construction + perVesselWaste[i] + perVesselOhp[i] + perVesselPassThrough[i]
+    );
 
     // Pre-warranty & client total (warranty as % of client)
-    const preWarranty = perVesselBasePlusCont.map((b, i) => b + perVesselWaste[i] + perVesselOhp[i]);
     const wRate = scopeWarranty ? clampN(warrantyPctOfClient) / 100 : 0;
-    const perVesselClient = preWarranty.map(n => (wRate < 1 ? n / (1 - wRate) : Infinity));
+    const perVesselClient = perVesselPreWarranty.map(n => (wRate < 1 ? n / (1 - wRate) : Infinity));
     const perVesselWarranty = perVesselClient.map(n => (scopeWarranty ? n * wRate : 0));
 
     // Rollups
-    const basePlusContProject = perVesselBasePlusCont.reduce((s, n) => s + n, 0);
+    const constructionPlusContProject = perVesselConstructionPlusCont.reduce((s, n) => s + n, 0);
+    const passThroughTotal = perVesselPassThrough.reduce((s, n) => s + n, 0);
     const wasteAmount = perVesselWaste.reduce((s, n) => s + n, 0);
     const ohpAmount   = perVesselOhp.reduce((s, n) => s + n, 0);
     const clientPrice = perVesselClient.reduce((s, n) => s + n, 0);
@@ -548,7 +564,8 @@ export default function EpsPoolCalculator() {
       name: c.vessel.name,
       type: c.vessel.type,
       finishSf: c.areas.finishSf,
-      preContBase: perVesselPreContBase[i],
+      construction: perVesselConstruction[i],
+      passThrough: perVesselPassThrough[i],
       designCont: perVesselCont[i],
       waste: perVesselWaste[i],
       ohp: perVesselOhp[i],
@@ -556,55 +573,70 @@ export default function EpsPoolCalculator() {
       clientTotal: perVesselClient[i],
     }));
 
-    // Consolidated scope breakdown (4 categories) - Base costs before markups
+    // Consolidated scope breakdown (4 categories)
     const vesselInstallLaborTotal = vesselCalcs.reduce((s, c) => s + (c.vesselInstallLabor || 0), 0);
     const equipmentInterconnectLaborTotal = vesselCalcs.reduce((s, c) => s + (c.equipmentInterconnectLabor || 0), 0);
 
+    // Base costs (before markups)
     const vesselAndInstallBaseCost = materialsTotal + vesselInstallLaborTotal + qualityControlTotal; // Vessel materials + vessel install labor + QC
     const equipmentAndInstallBaseCost = equipmentSubtotalVessels + chemStorage + equipmentInterconnectLaborTotal + startup; // Equipment + chem storage + interconnect labor + startup
-    const freightHandlingBaseCost = freightTotal + rigging; // Freight + handling + rigging
-    const designEngineeringBaseCost = designEngineering + repFee; // Design/eng + rep onsite
+    const freightHandlingBaseCost = freightTotal + rigging; // Freight + handling + rigging (pass-through, NO OH&P)
+    const designEngineeringBaseCost = designEngineering + repFee; // Design/eng + rep onsite (pass-through, NO OH&P)
 
-    const totalBaseCost = vesselAndInstallBaseCost + equipmentAndInstallBaseCost + freightHandlingBaseCost + designEngineeringBaseCost;
+    const constructionBaseCost = vesselAndInstallBaseCost + equipmentAndInstallBaseCost;
+    const passThroughBaseCost = freightHandlingBaseCost + designEngineeringBaseCost;
 
-    // Distribute markups (contingency, waste, OH&P, warranty) proportionally across all categories
-    const markupsTotal = designContAmount + wasteAmount + ohpAmount + warrantyReserve;
+    // Apply markups ONLY to construction costs (vessel + equipment), proportionally
+    const vesselConstructionShare = vesselAndInstallBaseCost / (constructionBaseCost || 1);
+    const equipmentConstructionShare = equipmentAndInstallBaseCost / (constructionBaseCost || 1);
 
-    const vesselAndInstallCost = vesselAndInstallBaseCost + (markupsTotal * (vesselAndInstallBaseCost / totalBaseCost));
-    const equipmentAndInstallCost = equipmentAndInstallBaseCost + (markupsTotal * (equipmentAndInstallBaseCost / totalBaseCost));
-    const freightHandlingCost = freightHandlingBaseCost + (markupsTotal * (freightHandlingBaseCost / totalBaseCost));
-    const designEngineeringCost = designEngineeringBaseCost + (markupsTotal * (designEngineeringBaseCost / totalBaseCost));
+    const vesselAndInstallMarkups = (designContAmount + wasteAmount + ohpAmount) * vesselConstructionShare;
+    const equipmentAndInstallMarkups = (designContAmount + wasteAmount + ohpAmount) * equipmentConstructionShare;
+
+    const vesselAndInstallCost = vesselAndInstallBaseCost + vesselAndInstallMarkups;
+    const equipmentAndInstallCost = equipmentAndInstallBaseCost + equipmentAndInstallMarkups;
+    const freightHandlingCost = freightHandlingBaseCost; // No markups
+    const designEngineeringCost = designEngineeringBaseCost; // No markups
+
+    // Warranty applies to entire project (including pass-through costs)
+    const totalBeforeWarranty = vesselAndInstallCost + equipmentAndInstallCost + freightHandlingCost + designEngineeringCost;
+    const warrantyShare = warrantyReserve / (totalBeforeWarranty || 1);
+
+    const vesselAndInstallWarranty = vesselAndInstallCost * warrantyShare;
+    const equipmentAndInstallWarranty = equipmentAndInstallCost * warrantyShare;
+    const freightHandlingWarranty = freightHandlingCost * warrantyShare;
+    const designEngineeringWarranty = designEngineeringCost * warrantyShare;
 
     const scopeBreakdown = clientPrice > 0 ? {
-      // Consolidated categories
+      // Consolidated categories (including warranty allocations)
       vesselAndInstall: {
-        cost: vesselAndInstallCost,
-        pct: (vesselAndInstallCost / clientPrice) * 100,
+        cost: vesselAndInstallCost + vesselAndInstallWarranty,
+        pct: ((vesselAndInstallCost + vesselAndInstallWarranty) / clientPrice) * 100,
       },
       equipmentAndInstall: {
-        cost: equipmentAndInstallCost,
-        pct: (equipmentAndInstallCost / clientPrice) * 100,
+        cost: equipmentAndInstallCost + equipmentAndInstallWarranty,
+        pct: ((equipmentAndInstallCost + equipmentAndInstallWarranty) / clientPrice) * 100,
       },
       freightHandling: {
-        cost: freightHandlingCost,
-        pct: (freightHandlingCost / clientPrice) * 100,
+        cost: freightHandlingCost + freightHandlingWarranty,
+        pct: ((freightHandlingCost + freightHandlingWarranty) / clientPrice) * 100,
       },
       designEngineering: {
-        cost: designEngineeringCost,
-        pct: (designEngineeringCost / clientPrice) * 100,
+        cost: designEngineeringCost + designEngineeringWarranty,
+        pct: ((designEngineeringCost + designEngineeringWarranty) / clientPrice) * 100,
       },
     } : null;
 
     // Per-vessel breakdown (allocate consolidated costs proportionally)
     const perVesselBreakdown = vesselCalcs.map((c, i) => {
-      const vesselShare = perVesselClient[i] / clientPrice;
+      const vesselShare = perVesselClient[i] / (clientPrice || 1);
       return {
         id: c.vessel.id,
         name: c.vessel.name,
-        vesselAndInstall: vesselAndInstallCost * vesselShare,
-        equipmentAndInstall: equipmentAndInstallCost * vesselShare,
-        freightHandling: freightHandlingCost * vesselShare,
-        designEngineering: designEngineeringCost * vesselShare,
+        vesselAndInstall: (vesselAndInstallCost + vesselAndInstallWarranty) * vesselShare,
+        equipmentAndInstall: (equipmentAndInstallCost + equipmentAndInstallWarranty) * vesselShare,
+        freightHandling: (freightHandlingCost + freightHandlingWarranty) * vesselShare,
+        designEngineering: (designEngineeringCost + designEngineeringWarranty) * vesselShare,
         total: perVesselClient[i],
       };
     });
@@ -621,7 +653,8 @@ export default function EpsPoolCalculator() {
       // contingency
       designContAmount,
       // rollups
-      hardCostsBase: basePlusContProject,
+      constructionBase: constructionPlusContProject,
+      passThroughTotal,
       wasteAmount, ohpAmount, warrantyReserve,
       clientPrice, profit, grossMarginPct, effectivePerSf,
       // per-vessel
@@ -631,7 +664,7 @@ export default function EpsPoolCalculator() {
       perVesselBreakdown,
     };
   }, [
-    vesselCalcs, vessels.length,
+    vesselCalcs, vessels.length, constructionType,
     scopeFreight, miles, dollarsPerMile, handlingPerVessel, regionMult,
     scopeDesignEng, designBase, designMult,
     scopeEquipment, useProjectChemicalStorage, projectChemicalStorageCost,

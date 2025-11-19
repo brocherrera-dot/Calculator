@@ -7,7 +7,17 @@
 
     <!-- Tailwind (optional) -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>tailwind.config = { darkMode: 'class' };</script>
+    <script>tailwind.config = { darkMode: 'media' };</script>
+
+    <!-- Dark Mode Styles -->
+    <style>
+      @media (prefers-color-scheme: dark) {
+        body {
+          background-color: #111827;
+          color: #f3f4f6;
+        }
+      }
+    </style>
   </head>
   <body style="margin:0">
     <div id="root"></div>

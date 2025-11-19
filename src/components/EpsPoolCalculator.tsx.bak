@@ -1,7 +1,5 @@
 // src/components/EpsPoolCalculator.tsx
 import React, { useMemo, useState } from "react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 
 /* ----------------------------- helpers ----------------------------- */
 const clampN = (n: number) => (Number.isFinite(n) ? Math.max(0, n) : 0);
@@ -58,47 +56,6 @@ interface EquipmentPackage {
   appliesTo: VesselType[];
   items: EquipmentLineItem[];
 }
-
-/* ---------------------- vessel migration helper ---------------------- */
-const migrateVessel = (v: any): Vessel => {
-  // If vessel has old structure with benches/steps arrays, migrate to new simplified structure
-  if (v.benches || v.steps) {
-    const firstBench = v.benches?.[0];
-    const firstStep = v.steps?.[0];
-
-    // Create new object without benches/steps properties
-    const { benches, steps, ...rest } = v;
-
-    return {
-      ...rest,
-      // Add new simplified bench properties
-      hasBench: !!firstBench,
-      benchLength_ft: firstBench?.length_ft ?? 3,
-      benchDepth_ft: firstBench?.depth_ft ?? 1.5,
-      benchHeight_ft: firstBench?.seat_height_ft ?? 1.5,
-      // Add new simplified steps properties
-      hasSteps: !!firstStep,
-      stepsWidth_ft: firstStep?.width_ft ?? 2,
-      stepsCount: firstStep?.n_risers ?? 3,
-      stepRiser_ft: firstStep?.riser_ft ?? 0.58,
-      stepTread_ft: firstStep?.tread_ft ?? 1,
-    };
-  }
-
-  // If already new structure, ensure all required properties exist
-  return {
-    ...v,
-    hasBench: v.hasBench ?? false,
-    benchLength_ft: v.benchLength_ft ?? 3,
-    benchDepth_ft: v.benchDepth_ft ?? 1.5,
-    benchHeight_ft: v.benchHeight_ft ?? 1.5,
-    hasSteps: v.hasSteps ?? false,
-    stepsWidth_ft: v.stepsWidth_ft ?? 2,
-    stepsCount: v.stepsCount ?? 3,
-    stepRiser_ft: v.stepRiser_ft ?? 0.58,
-    stepTread_ft: v.stepTread_ft ?? 1,
-  };
-};
 
 /* -------- latest equipment pricing (locked per your request) ------- */
 const DEFAULT_PACKAGES: EquipmentPackage[] = [
@@ -171,8 +128,8 @@ const DEFAULT_PACKAGES: EquipmentPackage[] = [
 
 /* -------------------------- tiny UI pieces -------------------------- */
 const Card: React.FC<{ title?: string; tight?: boolean }> = ({ title, tight, children }) => (
-  <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl ${tight ? 'p-3' : 'p-4'}`}>
-    {title ? <div className="font-semibold mb-2.5 dark:text-gray-100">{title}</div> : null}
+  <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: tight ? 12 : 16 }}>
+    {title ? <div style={{ fontWeight: 600, marginBottom: 10 }}>{title}</div> : null}
     {children}
   </div>
 );
@@ -188,7 +145,7 @@ const GridCols: React.FC<{ cols?: number }> = ({ cols = 2, children }) => (
 );
 const Row: React.FC<{ label: string }> = ({ label, children }) => (
   <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", alignItems: "center", gap: 10, marginBottom: 10 }}>
-    <div className="text-xs text-gray-600 dark:text-gray-300">{label}</div>
+    <div style={{ fontSize: 12, color: "#4b5563" }}>{label}</div>
     <div>{children}</div>
   </div>
 );
@@ -201,7 +158,7 @@ const Num: React.FC<{ value: number; onChange: (n: number) => void; step?: numbe
     value={Number.isFinite(value) ? value : 0}
     onChange={(e) => onChange(Number(e.target.value))}
     title={title}
-    className="w-full px-2.5 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-100"
+    style={{ width: "100%", padding: "8px 10px", border: "1px solid #d1d5db", borderRadius: 10 }}
   />
 );
 
@@ -341,12 +298,12 @@ export default function EpsPoolCalculator() {
   /* View Mode */
   const [viewMode, setViewMode] = useState<ViewMode>("pricing");
 
-  /* Breakdown Expansion States */
-  const [vesselExpanded, setVesselExpanded] = useState(false);
-  const [equipExpanded, setEquipExpanded] = useState(false);
-
-  /* Project Name */
+  /* Save/Load Project State */
   const [projectName, setProjectName] = useState("Untitled Project");
+  const [savedProjects, setSavedProjects] = useState<string[]>(() => {
+    const saved = localStorage.getItem("eps_saved_project_list");
+    return saved ? JSON.parse(saved) : [];
+  });
 
   /* Quick Add Modal State */
   const [showQuickAdd, setShowQuickAdd] = useState(false);
@@ -444,246 +401,258 @@ export default function EpsPoolCalculator() {
     }));
   };
 
-  /* ---------------------- PDF export helper ---------------------- */
-  const exportToPDF = () => {
-    const doc = new jsPDF();
+  /* ---------------------- save/load project helpers ---------------------- */
+  const saveProject = () => {
+    const timestamp = new Date().toISOString();
+    const projectData = {
+      projectName,
+      timestamp,
+      constructionType,
+      vessels,
+      // Save all configuration parameters
+      scopeMaterials,
+      scopeLabor,
+      scopeEquipment,
+      scopeFreight,
+      scopeDesignEng,
+      scopeContingency,
+      scopeWarranty,
+      // EPS params
+      epsBundlePerSf,
+      tileMaterialsPerSf,
+      ffeMaterialsPerVessel,
+      epsWpLaborPerSf,
+      tileLaborPerSf,
+      ffeLaborPerVessel,
+      equipPlumbPerVessel,
+      handrailInstallPerEa,
+      refrigLinePerCP,
+      regionMult,
+      // Stainless params
+      ss304LPricePerLb,
+      ss316LPricePerFt,
+      plateThickness,
+      bitumasticCoatingPerSf,
+      sacrificialAnodePerVessel,
+      tigWelderRatePerHr,
+      welderLoadedMult,
+      weldingTimePerLf,
+      grindingTimePerLf,
+      polishingTimePerLf,
+      passivationPerSf,
+      leakTestPerVessel,
+      qualityCertPerVessel,
+      // ADA frame params
+      includeAdaFrame,
+      steelTubingPricePerFt,
+      steelFabricationPerFt,
+      // Project costs
+      freightCost,
+      designEngCost,
+      repOnsiteCost,
+      startupCost,
+      riggingCost,
+      chemStorageCost,
+      ddPct,
+      wastePct,
+      ohpPct,
+      warrantyPct,
+      packages,
+    };
 
-    const pageWidth = doc.internal.pageSize.getWidth();
-    let yPos = 20;
+    const saveKey = `eps_project_${Date.now()}`;
+    localStorage.setItem(saveKey, JSON.stringify(projectData));
 
-    // Header
-    doc.setFontSize(18);
-    doc.setFont("helvetica", "bold");
-    doc.text("EPS Pool Calculator - Project Estimate", pageWidth / 2, yPos, { align: "center" });
+    const updatedList = [...savedProjects, saveKey];
+    setSavedProjects(updatedList);
+    localStorage.setItem("eps_saved_project_list", JSON.stringify(updatedList));
 
-    yPos += 10;
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Date: ${new Date().toLocaleDateString()}`, pageWidth / 2, yPos, { align: "center" });
+    alert(`Project "${projectName}" saved successfully!`);
+  };
 
-    yPos += 5;
-    doc.text(`Construction Type: ${constructionType}`, pageWidth / 2, yPos, { align: "center" });
+  const loadProject = (saveKey: string) => {
+    const data = localStorage.getItem(saveKey);
+    if (!data) return;
 
-    yPos += 15;
+    try {
+      const projectData = JSON.parse(data);
 
-    // Vessels Summary Table
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("Vessels Summary", 14, yPos);
-    yPos += 5;
+      // Restore project name
+      setProjectName(projectData.projectName);
 
-    const vesselsSummaryData = vesselCalcs.map(c => {
-      const row = project.perVesselRows.find(r => r.id === c.vessel.id)!;
-      return [
-        c.vessel.name,
-        c.vessel.type,
-        `${c.vessel.length_ft.toFixed(1)}' x ${c.vessel.width_ft.toFixed(1)}' x ${c.vessel.waterDepth_ft.toFixed(1)}'`,
-        fmt(row.finishSf),
-        `$${fmt(row.clientTotal)}`
-      ];
-    });
+      // Restore construction type
+      setConstructionType(projectData.constructionType);
 
-    autoTable(doc, {
-      startY: yPos,
-      head: [["Vessel", "Type", "Dimensions (L×W×D)", "Finish SF", "Client Total"]],
-      body: vesselsSummaryData,
-      theme: "striped",
-      columnStyles: {
-        3: { halign: "right" },
-        4: { halign: "right", fontStyle: "bold" }
-      }
-    });
+      // Restore vessels
+      setVessels(projectData.vessels);
 
-    yPos = (doc as any).lastAutoTable.finalY + 15;
+      // Restore scopes
+      setScopeMaterials(projectData.scopeMaterials);
+      setScopeLabor(projectData.scopeLabor);
+      setScopeEquipment(projectData.scopeEquipment);
+      setScopeFreight(projectData.scopeFreight);
+      setScopeDesignEng(projectData.scopeDesignEng);
+      setScopeContingency(projectData.scopeContingency);
+      setScopeWarranty(projectData.scopeWarranty);
 
-    // Per-Vessel Breakdown Table
-    if (yPos > 240) {
-      doc.addPage();
-      yPos = 20;
+      // Restore EPS params
+      setEpsBundlePerSf(projectData.epsBundlePerSf);
+      setTileMaterialsPerSf(projectData.tileMaterialsPerSf);
+      setFfeMaterialsPerVessel(projectData.ffeMaterialsPerVessel);
+      setEpsWpLaborPerSf(projectData.epsWpLaborPerSf);
+      setTileLaborPerSf(projectData.tileLaborPerSf);
+      setFfeLaborPerVessel(projectData.ffeLaborPerVessel);
+      setEquipPlumbPerVessel(projectData.equipPlumbPerVessel);
+      setHandrailInstallPerEa(projectData.handrailInstallPerEa);
+      setRefrigLinePerCP(projectData.refrigLinePerCP);
+      setRegionMult(projectData.regionMult);
+
+      // Restore stainless params
+      setSs304LPricePerLb(projectData.ss304LPricePerLb);
+      setSs316LPricePerFt(projectData.ss316LPricePerFt);
+      setPlateThickness(projectData.plateThickness);
+      setBitumasticCoatingPerSf(projectData.bitumasticCoatingPerSf);
+      setSacrificialAnodePerVessel(projectData.sacrificialAnodePerVessel);
+      setTigWelderRatePerHr(projectData.tigWelderRatePerHr);
+      setWelderLoadedMult(projectData.welderLoadedMult);
+      setWeldingTimePerLf(projectData.weldingTimePerLf);
+      setGrindingTimePerLf(projectData.grindingTimePerLf);
+      setPolishingTimePerLf(projectData.polishingTimePerLf);
+      setPassivationPerSf(projectData.passivationPerSf);
+      setLeakTestPerVessel(projectData.leakTestPerVessel);
+      setQualityCertPerVessel(projectData.qualityCertPerVessel);
+
+      // Restore ADA frame params
+      setIncludeAdaFrame(projectData.includeAdaFrame);
+      setSteelTubingPricePerFt(projectData.steelTubingPricePerFt);
+      setSteelFabricationPerFt(projectData.steelFabricationPerFt);
+
+      // Restore project costs
+      setFreightCost(projectData.freightCost);
+      setDesignEngCost(projectData.designEngCost);
+      setRepOnsiteCost(projectData.repOnsiteCost);
+      setStartupCost(projectData.startupCost);
+      setRiggingCost(projectData.riggingCost);
+      setChemStorageCost(projectData.chemStorageCost);
+      setDdPct(projectData.ddPct);
+      setWastePct(projectData.wastePct);
+      setOhpPct(projectData.ohpPct);
+      setWarrantyPct(projectData.warrantyPct);
+
+      // Restore packages
+      setPackages(projectData.packages);
+
+      alert(`Project "${projectData.projectName}" loaded successfully!`);
+    } catch (e) {
+      alert("Failed to load project. The save file may be corrupted.");
     }
+  };
 
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("Per-Vessel Breakdown", 14, yPos);
-    yPos += 5;
+  const deleteProject = (saveKey: string) => {
+    if (!confirm("Are you sure you want to delete this saved project?")) return;
 
-    const vesselsBreakdownData = project.perVesselRows.map(r => [
-      r.name,
-      r.type,
-      fmt(r.finishSf),
-      `$${fmt(r.preContBase)}`,
-      `$${fmt(r.designCont)}`,
-      `$${fmt(r.waste)}`,
-      `$${fmt(r.ohp)}`,
-      `$${fmt(r.warranty)}`,
-      `$${fmt(r.clientTotal)}`
-    ]);
+    localStorage.removeItem(saveKey);
+    const updatedList = savedProjects.filter(k => k !== saveKey);
+    setSavedProjects(updatedList);
+    localStorage.setItem("eps_saved_project_list", JSON.stringify(updatedList));
+  };
 
-    autoTable(doc, {
-      startY: yPos,
-      head: [["Vessel", "Type", "Finish SF", "Pre-Cont Base", "Design Cont", "Waste", "OH&P", "Warranty", "Client Total"]],
-      body: vesselsBreakdownData,
-      theme: "striped",
-      columnStyles: {
-        2: { halign: "right" },
-        3: { halign: "right" },
-        4: { halign: "right" },
-        5: { halign: "right" },
-        6: { halign: "right" },
-        7: { halign: "right" },
-        8: { halign: "right", fontStyle: "bold" }
+  const exportProject = () => {
+    const timestamp = new Date().toISOString();
+    const projectData = {
+      projectName,
+      timestamp,
+      constructionType,
+      vessels,
+      // Include all configuration (same as saveProject)
+      scopeMaterials, scopeLabor, scopeEquipment, scopeFreight, scopeDesignEng, scopeContingency, scopeWarranty,
+      epsBundlePerSf, tileMaterialsPerSf, ffeMaterialsPerVessel, epsWpLaborPerSf, tileLaborPerSf, ffeLaborPerVessel,
+      equipPlumbPerVessel, handrailInstallPerEa, refrigLinePerCP, regionMult,
+      ss304LPricePerLb, ss316LPricePerFt, plateThickness, bitumasticCoatingPerSf, sacrificialAnodePerVessel,
+      tigWelderRatePerHr, welderLoadedMult, weldingTimePerLf, grindingTimePerLf, polishingTimePerLf, passivationPerSf,
+      leakTestPerVessel, qualityCertPerVessel,
+      includeAdaFrame, steelTubingPricePerFt, steelFabricationPerFt,
+      freightCost, designEngCost, repOnsiteCost, startupCost, riggingCost, chemStorageCost,
+      ddPct, wastePct, ohpPct, warrantyPct,
+      packages,
+    };
+
+    const blob = new Blob([JSON.stringify(projectData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${projectName.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importProject = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const projectData = JSON.parse(e.target?.result as string);
+
+        // Load all data using the same logic as loadProject
+        setProjectName(projectData.projectName);
+        setConstructionType(projectData.constructionType);
+        setVessels(projectData.vessels);
+        setScopeMaterials(projectData.scopeMaterials);
+        setScopeLabor(projectData.scopeLabor);
+        setScopeEquipment(projectData.scopeEquipment);
+        setScopeFreight(projectData.scopeFreight);
+        setScopeDesignEng(projectData.scopeDesignEng);
+        setScopeContingency(projectData.scopeContingency);
+        setScopeWarranty(projectData.scopeWarranty);
+        setEpsBundlePerSf(projectData.epsBundlePerSf);
+        setTileMaterialsPerSf(projectData.tileMaterialsPerSf);
+        setFfeMaterialsPerVessel(projectData.ffeMaterialsPerVessel);
+        setEpsWpLaborPerSf(projectData.epsWpLaborPerSf);
+        setTileLaborPerSf(projectData.tileLaborPerSf);
+        setFfeLaborPerVessel(projectData.ffeLaborPerVessel);
+        setEquipPlumbPerVessel(projectData.equipPlumbPerVessel);
+        setHandrailInstallPerEa(projectData.handrailInstallPerEa);
+        setRefrigLinePerCP(projectData.refrigLinePerCP);
+        setRegionMult(projectData.regionMult);
+        setSs304LPricePerLb(projectData.ss304LPricePerLb);
+        setSs316LPricePerFt(projectData.ss316LPricePerFt);
+        setPlateThickness(projectData.plateThickness);
+        setBitumasticCoatingPerSf(projectData.bitumasticCoatingPerSf);
+        setSacrificialAnodePerVessel(projectData.sacrificialAnodePerVessel);
+        setTigWelderRatePerHr(projectData.tigWelderRatePerHr);
+        setWelderLoadedMult(projectData.welderLoadedMult);
+        setWeldingTimePerLf(projectData.weldingTimePerLf);
+        setGrindingTimePerLf(projectData.grindingTimePerLf);
+        setPolishingTimePerLf(projectData.polishingTimePerLf);
+        setPassivationPerSf(projectData.passivationPerSf);
+        setLeakTestPerVessel(projectData.leakTestPerVessel);
+        setQualityCertPerVessel(projectData.qualityCertPerVessel);
+        setIncludeAdaFrame(projectData.includeAdaFrame);
+        setSteelTubingPricePerFt(projectData.steelTubingPricePerFt);
+        setSteelFabricationPerFt(projectData.steelFabricationPerFt);
+        setFreightCost(projectData.freightCost);
+        setDesignEngCost(projectData.designEngCost);
+        setRepOnsiteCost(projectData.repOnsiteCost);
+        setStartupCost(projectData.startupCost);
+        setRiggingCost(projectData.riggingCost);
+        setChemStorageCost(projectData.chemStorageCost);
+        setDdPct(projectData.ddPct);
+        setWastePct(projectData.wastePct);
+        setOhpPct(projectData.ohpPct);
+        setWarrantyPct(projectData.warrantyPct);
+        setPackages(projectData.packages);
+
+        alert(`Project "${projectData.projectName}" imported successfully!`);
+      } catch (e) {
+        alert("Failed to import project. The file may be invalid.");
       }
-    });
+    };
+    reader.readAsText(file);
 
-    yPos = (doc as any).lastAutoTable.finalY + 15;
-
-    // Equipment Packages Section
-    if (yPos > 240) {
-      doc.addPage();
-      yPos = 20;
-    }
-
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("Equipment Packages", 14, yPos);
-    yPos += 5;
-
-    vesselCalcs.forEach((calc) => {
-      const pkg = packages.find(p => p.key === calc.vessel.equipmentPackageKey);
-      if (!pkg) return;
-
-      if (yPos > 260) {
-        doc.addPage();
-        yPos = 20;
-      }
-
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.text(`${calc.vessel.name}: ${pkg.label}`, 14, yPos);
-      yPos += 5;
-
-      doc.setFontSize(8);
-      doc.setFont("helvetica", "normal");
-      pkg.items.forEach(item => {
-        doc.text(`  • ${item.label}: $${fmt(item.cost)}`, 14, yPos);
-        yPos += 4;
-      });
-      yPos += 3;
-    });
-
-    yPos += 10;
-
-    // Weight Calculations Table
-    if (yPos > 220) {
-      doc.addPage();
-      yPos = 20;
-    }
-
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("Weight Calculations", 14, yPos);
-    yPos += 5;
-
-    const weightData = vesselCalcs.map(c => {
-      const w = c.weights;
-      return [
-        c.vessel.name,
-        fmt(w.planArea_ft2),
-        fmt(w.water_lb),
-        fmt(w.tile_lb),
-        constructionType === "EPS" ? fmt(w.eps_lb) : fmt(w.stainless_lb),
-        fmt(w.bathers_lb),
-        constructionType === "EPS" ? fmt(w.eps_total_lb) : fmt(w.stainless_total_lb)
-      ];
-    });
-
-    autoTable(doc, {
-      startY: yPos,
-      head: [["Vessel", "Plan Area (ft²)", "Water (lb)", "Tile (lb)", constructionType === "EPS" ? "EPS (lb)" : "SS (lb)", "Bathers (lb)", "Total Load (lb)"]],
-      body: weightData,
-      theme: "striped",
-      columnStyles: {
-        1: { halign: "right" },
-        2: { halign: "right" },
-        3: { halign: "right" },
-        4: { halign: "right" },
-        5: { halign: "right" },
-        6: { halign: "right", fontStyle: "bold" }
-      }
-    });
-
-    yPos = (doc as any).lastAutoTable.finalY + 15;
-
-    // Project Totals Section
-    if (yPos > 180) {
-      doc.addPage();
-      yPos = 20;
-    }
-
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("Project Totals", 14, yPos);
-    yPos += 8;
-
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-
-    const totalsData = [
-      ["Finish Surface Area", `${fmt(project.finishSfTotal)} sf`],
-      ["Materials (vessels)", `$${fmt(project.materialsTotal)}`],
-      ["Equipment (vessels)", `$${fmt(project.equipmentSubtotalVessels)}`],
-      ["Labor (vessels)", `$${fmt(project.laborSubtotal)}`],
-      ["Freight / Delivery", `$${fmt(project.freightTotal)}`],
-      ["Design & Engineering", `$${fmt(project.designEngineering)}`],
-      ["Rep Onsite", `$${fmt(project.repFee)}`],
-      ["Startup", `$${fmt(project.startup)}`],
-      ["Chem Storage", `$${fmt(project.chemStorage)}`],
-      ["Rigging", `$${fmt(project.rigging)}`],
-      ["", ""],
-      ["Design Contingency", `$${fmt(project.designContAmount)}`],
-      ["Waste", `$${fmt(project.wasteAmount)}`],
-      ["OH&P", `$${fmt(project.ohpAmount)}`],
-      ["Warranty Reserve", `$${fmt(project.warrantyReserve)}`],
-      ["", ""],
-    ];
-
-    autoTable(doc, {
-      startY: yPos,
-      body: totalsData,
-      theme: "plain",
-      columnStyles: {
-        0: { cellWidth: 80 },
-        1: { halign: "right", cellWidth: 60 }
-      }
-    });
-
-    yPos = (doc as any).lastAutoTable.finalY + 5;
-
-    // Final totals box
-    doc.setFillColor(255, 255, 255);
-    doc.rect(14, yPos, pageWidth - 28, 35, "F");
-    doc.setDrawColor(229, 231, 235);
-    doc.rect(14, yPos, pageWidth - 28, 35, "S");
-
-    yPos += 8;
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text(`Client Price: $${fmt(project.clientPrice)}`, 20, yPos);
-
-    yPos += 8;
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Profit (≈ OH&P amount): $${fmt(project.ohpAmount)}`, 20, yPos);
-
-    yPos += 6;
-    doc.text(`Gross Margin: ${fmt(project.grossMarginPct)}%`, 20, yPos);
-
-    yPos += 6;
-    doc.text(`Effective $/sf (client): $${fmt(project.effectivePerSf)}`, 20, yPos);
-
-    // Save the PDF
-    const filename = `${projectName.replace(/\s+/g, '_')}_Pool_Estimate_${new Date().toISOString().split('T')[0]}.pdf`;
-    doc.save(filename);
+    // Reset the input so the same file can be imported again
+    event.target.value = "";
   };
 
   /* ---------------------- weight calculation helpers ---------------------- */
@@ -1072,7 +1041,6 @@ export default function EpsPoolCalculator() {
       finishSf: c.areas.finishSf,
       construction: perVesselConstruction[i],
       passThrough: perVesselPassThrough[i],
-      preContBase: perVesselConstruction[i] + perVesselPassThrough[i],
       designCont: perVesselCont[i],
       waste: perVesselWaste[i],
       ohp: perVesselOhp[i],
@@ -1230,56 +1198,183 @@ export default function EpsPoolCalculator() {
   /* ------------------------------- UI -------------------------------- */
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      {/* Export to PDF */}
-      <Card title="Export">
-        <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
-          <label className="text-sm font-semibold min-w-[100px] dark:text-gray-100">Project Name:</label>
-          <input
-            type="text"
-            value={projectName}
-            onChange={(e) => setProjectName(e.target.value)}
-            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
-            placeholder="Enter project name..."
-          />
+      {/* Save/Load Project */}
+      <Card title="Project Management">
+        <div style={{ display: "grid", gap: 12 }}>
+          {/* Project Name */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <label style={{ fontSize: 13, fontWeight: 600, minWidth: 100 }}>Project Name:</label>
+            <input
+              type="text"
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              style={{
+                flex: 1,
+                padding: "8px 12px",
+                border: "1px solid #d1d5db",
+                borderRadius: 6,
+                fontSize: 14,
+              }}
+              placeholder="Enter project name..."
+            />
+          </div>
+
+          {/* Save/Load Controls */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              onClick={saveProject}
+              style={{
+                padding: "8px 16px",
+                background: "#3b82f6",
+                color: "white",
+                border: "none",
+                borderRadius: 6,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              💾 Save Project
+            </button>
+
+            {savedProjects.length > 0 && (
+              <div style={{ position: "relative" }}>
+                <select
+                  onChange={(e) => e.target.value && loadProject(e.target.value)}
+                  defaultValue=""
+                  style={{
+                    padding: "8px 12px",
+                    border: "1px solid #d1d5db",
+                    borderRadius: 6,
+                    fontSize: 14,
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="" disabled>Load Saved Project...</option>
+                  {savedProjects.map((key) => {
+                    const data = localStorage.getItem(key);
+                    if (!data) return null;
+                    try {
+                      const project = JSON.parse(data);
+                      const date = new Date(project.timestamp).toLocaleString();
+                      return (
+                        <option key={key} value={key}>
+                          {project.projectName} - {date}
+                        </option>
+                      );
+                    } catch {
+                      return null;
+                    }
+                  })}
+                </select>
+              </div>
+            )}
+
+            {savedProjects.length > 0 && (
+              <div style={{ position: "relative" }}>
+                <select
+                  onChange={(e) => e.target.value && deleteProject(e.target.value)}
+                  defaultValue=""
+                  style={{
+                    padding: "8px 12px",
+                    border: "1px solid #ef4444",
+                    color: "#ef4444",
+                    borderRadius: 6,
+                    fontSize: 14,
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="" disabled>Delete Saved Project...</option>
+                  {savedProjects.map((key) => {
+                    const data = localStorage.getItem(key);
+                    if (!data) return null;
+                    try {
+                      const project = JSON.parse(data);
+                      return (
+                        <option key={key} value={key}>
+                          {project.projectName}
+                        </option>
+                      );
+                    } catch {
+                      return null;
+                    }
+                  })}
+                </select>
+              </div>
+            )}
+
+            <button
+              onClick={exportProject}
+              style={{
+                padding: "8px 16px",
+                background: "#10b981",
+                color: "white",
+                border: "none",
+                borderRadius: 6,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              📥 Export JSON
+            </button>
+
+            <label
+              style={{
+                padding: "8px 16px",
+                background: "#8b5cf6",
+                color: "white",
+                border: "none",
+                borderRadius: 6,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              📤 Import JSON
+              <input
+                type="file"
+                accept=".json"
+                onChange={importProject}
+                style={{ display: "none" }}
+              />
+            </label>
+          </div>
         </div>
-        <button
-          onClick={exportToPDF}
-          style={{
-            padding: "12px 24px",
-            background: "#3b82f6",
-            color: "white",
-            border: "none",
-            borderRadius: 8,
-            fontSize: 15,
-            fontWeight: 600,
-            cursor: "pointer",
-            width: "100%",
-          }}
-        >
-          📄 Export to PDF
-        </button>
       </Card>
 
       {/* Tab Selector */}
       <Card>
-        <div className="flex gap-2 border-b-2 border-gray-200 dark:border-gray-700 -mb-4 pb-0">
+        <div style={{ display: "flex", gap: 8, borderBottom: "2px solid #e5e7eb", marginBottom: -16, paddingBottom: 0 }}>
           <button
             onClick={() => setViewMode("pricing")}
-            className={`px-6 py-3 border-none cursor-pointer text-base transition-all ${
-              viewMode === "pricing"
-                ? "border-b-[3px] border-b-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-500 dark:text-blue-400 font-semibold"
-                : "border-b-[3px] border-b-transparent bg-transparent text-gray-500 dark:text-gray-400 font-normal"
-            }`}
+            style={{
+              padding: "12px 24px",
+              border: "none",
+              borderBottom: viewMode === "pricing" ? "3px solid #3b82f6" : "3px solid transparent",
+              background: viewMode === "pricing" ? "#eff6ff" : "transparent",
+              color: viewMode === "pricing" ? "#3b82f6" : "#6b7280",
+              fontWeight: viewMode === "pricing" ? 600 : 400,
+              cursor: "pointer",
+              fontSize: 15,
+              transition: "all 0.2s",
+            }}
           >
             💰 Pricing
           </button>
           <button
             onClick={() => setViewMode("weights")}
-            className={`px-6 py-3 border-none cursor-pointer text-base transition-all ${
-              viewMode === "weights"
-                ? "border-b-[3px] border-b-purple-500 bg-purple-50 dark:bg-purple-900/30 text-purple-500 dark:text-purple-400 font-semibold"
-                : "border-b-[3px] border-b-transparent bg-transparent text-gray-500 dark:text-gray-400 font-normal"
-            }`}
+            style={{
+              padding: "12px 24px",
+              border: "none",
+              borderBottom: viewMode === "weights" ? "3px solid #8b5cf6" : "3px solid transparent",
+              background: viewMode === "weights" ? "#f5f3ff" : "transparent",
+              color: viewMode === "weights" ? "#8b5cf6" : "#6b7280",
+              fontWeight: viewMode === "weights" ? 600 : 400,
+              cursor: "pointer",
+              fontSize: 15,
+              transition: "all 0.2s",
+            }}
           >
             ⚖️ Weights & Loads
           </button>
@@ -1292,18 +1387,18 @@ export default function EpsPoolCalculator() {
       {/* Construction Type Selector */}
       <Card title="Construction Type">
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer ${constructionType === "EPS" ? "border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/30" : "border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"}`}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", border: constructionType === "EPS" ? "2px solid #3b82f6" : "1px solid #d1d5db", borderRadius: 10, background: constructionType === "EPS" ? "#eff6ff" : "#fff", cursor: "pointer" }}>
             <input type="radio" checked={constructionType === "EPS"} onChange={() => setConstructionType("EPS")} />
             <div>
-              <div className="font-semibold dark:text-gray-100">EPS Construction</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Foam vessel with tile finish</div>
+              <div style={{ fontWeight: 600 }}>EPS Construction</div>
+              <div style={{ fontSize: 12, color: "#6b7280" }}>Foam vessel with tile finish</div>
             </div>
           </label>
-          <label className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer ${constructionType === "Stainless Steel" ? "border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/30" : "border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"}`}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", border: constructionType === "Stainless Steel" ? "2px solid #3b82f6" : "1px solid #d1d5db", borderRadius: 10, background: constructionType === "Stainless Steel" ? "#eff6ff" : "#fff", cursor: "pointer" }}>
             <input type="radio" checked={constructionType === "Stainless Steel"} onChange={() => setConstructionType("Stainless Steel")} />
             <div>
-              <div className="font-semibold dark:text-gray-100">Stainless Steel</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">304L/316L fabricated in Mexico</div>
+              <div style={{ fontWeight: 600 }}>Stainless Steel</div>
+              <div style={{ fontSize: 12, color: "#6b7280" }}>304L/316L fabricated in Mexico</div>
             </div>
           </label>
         </div>
@@ -1480,16 +1575,16 @@ export default function EpsPoolCalculator() {
                     onClick={() => updateVessel(v.id, { collapsed: !v.collapsed })}
                     aria-expanded={!v.collapsed}
                     title={v.collapsed ? "Expand" : "Collapse"}
-                    className="w-7 h-7 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 cursor-pointer"
+                    style={iconBtn}
                   >
                     {v.collapsed ? "▸" : "▾"}
                   </button>
-                  <div className="font-semibold dark:text-gray-100">{v.name} — {v.type}</div>
+                  <div style={{ fontWeight: 600 }}>{v.name} — {v.type}</div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   {headerRight}
-                  <button onClick={() => duplicateVessel(v.id)} className="px-2.5 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-100" title="Duplicate this vessel">Duplicate</button>
-                  <button onClick={() => removeVessel(v.id)} className="px-2.5 py-1 rounded-lg border border-red-400 dark:border-red-500 text-red-500 dark:text-red-400 bg-white dark:bg-gray-800">Remove</button>
+                  <button onClick={() => duplicateVessel(v.id)} style={btn} title="Duplicate this vessel">Duplicate</button>
+                  <button onClick={() => removeVessel(v.id)} style={dangerBtn}>Remove</button>
                 </div>
               </div>
 
@@ -1498,7 +1593,7 @@ export default function EpsPoolCalculator() {
                 <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
                   <div>
                     <Row label="Name">
-                      <input value={v.name} onChange={e => updateVessel(v.id, { name: e.target.value })} className="w-full px-2.5 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-100" />
+                      <input value={v.name} onChange={e => updateVessel(v.id, { name: e.target.value })} style={input} />
                     </Row>
                     <Row label="Inside length (ft)"><Num value={v.length_ft} onChange={n => updateVessel(v.id, { length_ft: n })} step={0.1} min={0.1} title="Interior length of vessel in feet" /></Row>
                     <Row label="Inside width (ft)"><Num value={v.width_ft} onChange={n => updateVessel(v.id, { width_ft: n })} step={0.1} min={0.1} title="Interior width of vessel in feet" /></Row>
@@ -1511,9 +1606,9 @@ export default function EpsPoolCalculator() {
                     </Row>
                     {v.hasBench && (
                       <>
-                        <Row label="Bench length (in)"><Num value={v.benchLength_ft * 12} onChange={n => updateVessel(v.id, { benchLength_ft: n / 12 })} step={1} min={1} /></Row>
-                        <Row label="Bench depth (in)"><Num value={v.benchDepth_ft * 12} onChange={n => updateVessel(v.id, { benchDepth_ft: n / 12 })} step={1} min={1} /></Row>
-                        <Row label="Bench height (in)"><Num value={v.benchHeight_ft * 12} onChange={n => updateVessel(v.id, { benchHeight_ft: n / 12 })} step={1} min={1} /></Row>
+                        <Row label="Bench length (ft)"><Num value={v.benchLength_ft} onChange={n => updateVessel(v.id, { benchLength_ft: n })} step={0.1} min={0.1} /></Row>
+                        <Row label="Bench depth (ft)"><Num value={v.benchDepth_ft} onChange={n => updateVessel(v.id, { benchDepth_ft: n })} step={0.1} min={0.1} /></Row>
+                        <Row label="Bench height (ft)"><Num value={v.benchHeight_ft} onChange={n => updateVessel(v.id, { benchHeight_ft: n })} step={0.1} min={0.1} /></Row>
                       </>
                     )}
                     <Row label="Include steps">
@@ -1521,10 +1616,10 @@ export default function EpsPoolCalculator() {
                     </Row>
                     {v.hasSteps && (
                       <>
-                        <Row label="Steps width (in)"><Num value={v.stepsWidth_ft * 12} onChange={n => updateVessel(v.id, { stepsWidth_ft: n / 12 })} step={1} min={1} /></Row>
+                        <Row label="Steps width (ft)"><Num value={v.stepsWidth_ft} onChange={n => updateVessel(v.id, { stepsWidth_ft: n })} step={0.1} min={0.1} /></Row>
                         <Row label="Number of steps"><Num value={v.stepsCount} onChange={n => updateVessel(v.id, { stepsCount: Math.round(n) })} min={1} /></Row>
-                        <Row label="Step riser (in)"><Num value={v.stepRiser_ft * 12} onChange={n => updateVessel(v.id, { stepRiser_ft: n / 12 })} step={0.5} min={1} /></Row>
-                        <Row label="Step tread (in)"><Num value={v.stepTread_ft * 12} onChange={n => updateVessel(v.id, { stepTread_ft: n / 12 })} step={1} min={1} /></Row>
+                        <Row label="Step riser height (ft)"><Num value={v.stepRiser_ft} onChange={n => updateVessel(v.id, { stepRiser_ft: n })} step={0.01} min={0.1} /></Row>
+                        <Row label="Step tread depth (ft)"><Num value={v.stepTread_ft} onChange={n => updateVessel(v.id, { stepTread_ft: n })} step={0.1} min={0.1} /></Row>
                       </>
                     )}
                   </div>
@@ -1545,7 +1640,7 @@ export default function EpsPoolCalculator() {
                       <select
                         value={v.equipmentPackageKey}
                         onChange={e => updateVessel(v.id, { equipmentPackageKey: e.target.value })}
-                        className="w-full px-2.5 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-100"
+                        style={input}
                       >
                         {availablePkgs.map(p => (
                           <option key={p.key} value={p.key}>{p.label}</option>
@@ -1597,6 +1692,190 @@ export default function EpsPoolCalculator() {
                     </div>
                   </div>
                 </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                            <input
+                              value={bench.name}
+                              onChange={e => {
+                                const next = [...v.benches];
+                                next[bIdx] = { ...next[bIdx], name: e.target.value };
+                                updateVessel(v.id, { benches: next });
+                              }}
+                              style={{ ...input, fontWeight: 600, fontSize: 13 }}
+                            />
+                            <button
+                              onClick={() => {
+                                updateVessel(v.id, { benches: v.benches.filter((_, i) => i !== bIdx) });
+                              }}
+                              style={{ ...dangerBtn, padding: "4px 8px", fontSize: 12 }}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
+                            <Row label="Length (ft)">
+                              <Num
+                                value={bench.length_ft}
+                                onChange={n => {
+                                  const next = [...v.benches];
+                                  next[bIdx] = { ...next[bIdx], length_ft: n };
+                                  updateVessel(v.id, { benches: next });
+                                }}
+                                step={0.1}
+                                min={0.1}
+                              />
+                            </Row>
+                            <Row label="Depth (ft)">
+                              <Num
+                                value={bench.depth_ft}
+                                onChange={n => {
+                                  const next = [...v.benches];
+                                  next[bIdx] = { ...next[bIdx], depth_ft: n };
+                                  updateVessel(v.id, { benches: next });
+                                }}
+                                step={0.1}
+                                min={0.1}
+                              />
+                            </Row>
+                            <Row label="Seat height (ft)">
+                              <Num
+                                value={bench.seat_height_ft}
+                                onChange={n => {
+                                  const next = [...v.benches];
+                                  next[bIdx] = { ...next[bIdx], seat_height_ft: n };
+                                  updateVessel(v.id, { benches: next });
+                                }}
+                                step={0.1}
+                                min={0.1}
+                              />
+                            </Row>
+                            <Row label="Touches wall">
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  checked={bench.touches_wall}
+                                  onChange={e => {
+                                    const next = [...v.benches];
+                                    next[bIdx] = { ...next[bIdx], touches_wall: e.target.checked };
+                                    updateVessel(v.id, { benches: next });
+                                  }}
+                                />
+                              </label>
+                            </Row>
+                          </div>
+                        </div>
+                      ))}
+                      </div>
+
+                      {/* Steps */}
+                      <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <div style={{ fontWeight: 600 }}>Step Flights ({v.steps.length})</div>
+                        <button
+                          onClick={() => {
+                            const newSteps: StepFlight = {
+                              id: mkId(),
+                              name: `Steps ${v.steps.length + 1}`,
+                              width_ft: 3,
+                              n_risers: 3,
+                              riser_ft: 0.5,
+                              tread_ft: 1,
+                              against_wall: true
+                            };
+                            updateVessel(v.id, { steps: [...v.steps, newSteps] });
+                          }}
+                          style={btn}
+                        >
+                          + Add Step Flight
+                        </button>
+                      </div>
+                      {v.steps.map((step, sIdx) => (
+                        <div key={step.id} style={{ background: "#f9fafb", padding: 10, borderRadius: 6, marginBottom: 8 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                            <input
+                              value={step.name}
+                              onChange={e => {
+                                const next = [...v.steps];
+                                next[sIdx] = { ...next[sIdx], name: e.target.value };
+                                updateVessel(v.id, { steps: next });
+                              }}
+                              style={{ ...input, fontWeight: 600, fontSize: 13 }}
+                            />
+                            <button
+                              onClick={() => {
+                                updateVessel(v.id, { steps: v.steps.filter((_, i) => i !== sIdx) });
+                              }}
+                              style={{ ...dangerBtn, padding: "4px 8px", fontSize: 12 }}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
+                            <Row label="Width (ft)">
+                              <Num
+                                value={step.width_ft}
+                                onChange={n => {
+                                  const next = [...v.steps];
+                                  next[sIdx] = { ...next[sIdx], width_ft: n };
+                                  updateVessel(v.id, { steps: next });
+                                }}
+                                step={0.1}
+                                min={0.1}
+                              />
+                            </Row>
+                            <Row label="# Risers">
+                              <Num
+                                value={step.n_risers}
+                                onChange={n => {
+                                  const next = [...v.steps];
+                                  next[sIdx] = { ...next[sIdx], n_risers: Math.max(1, Math.round(n)) };
+                                  updateVessel(v.id, { steps: next });
+                                }}
+                                min={1}
+                              />
+                            </Row>
+                            <Row label="Riser (ft)">
+                              <Num
+                                value={step.riser_ft}
+                                onChange={n => {
+                                  const next = [...v.steps];
+                                  next[sIdx] = { ...next[sIdx], riser_ft: n };
+                                  updateVessel(v.id, { steps: next });
+                                }}
+                                step={0.1}
+                                min={0.1}
+                              />
+                            </Row>
+                            <Row label="Tread (ft)">
+                              <Num
+                                value={step.tread_ft}
+                                onChange={n => {
+                                  const next = [...v.steps];
+                                  next[sIdx] = { ...next[sIdx], tread_ft: n };
+                                  updateVessel(v.id, { steps: next });
+                                }}
+                                step={0.1}
+                                min={0.1}
+                              />
+                            </Row>
+                            <Row label="Against wall">
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  checked={step.against_wall}
+                                  onChange={e => {
+                                    const next = [...v.steps];
+                                    next[sIdx] = { ...next[sIdx], against_wall: e.target.checked };
+                                    updateVessel(v.id, { steps: next });
+                                  }}
+                                />
+                              </label>
+                            </Row>
+                          </div>
+                        </div>
+                      ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1742,10 +2021,10 @@ export default function EpsPoolCalculator() {
                         />
                       );
                     })}
-                    <text x={centerX} y={centerY - 10} textAnchor="middle" fontSize="16" fontWeight="600" className="fill-gray-900 dark:fill-gray-100">
+                    <text x={centerX} y={centerY - 10} textAnchor="middle" fontSize="16" fontWeight="600" fill="#111827">
                       Total
                     </text>
-                    <text x={centerX} y={centerY + 15} textAnchor="middle" fontSize="24" fontWeight="700" className="fill-gray-900 dark:fill-gray-100">
+                    <text x={centerX} y={centerY + 15} textAnchor="middle" fontSize="24" fontWeight="700" fill="#111827">
                       ${fmt(project.clientPrice / 1000)}k
                     </text>
                   </svg>
@@ -1754,8 +2033,8 @@ export default function EpsPoolCalculator() {
                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <div style={{ width: 16, height: 16, background: cat.color, borderRadius: 3 }} />
                         <div>
-                          <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">{cat.label}</div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">${fmt(cat.cost)} ({fmt(cat.pct)}%)</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>{cat.label}</div>
+                          <div style={{ fontSize: 12, color: '#6b7280' }}>${fmt(cat.cost)} ({fmt(cat.pct)}%)</div>
                         </div>
                       </div>
                     ))}
@@ -1767,10 +2046,11 @@ export default function EpsPoolCalculator() {
 
           {/* Project-Level Breakdown with Subcategories */}
           <div style={{ marginBottom: 24 }}>
-            <div className="font-semibold mb-3 text-base dark:text-gray-100">Project Total Breakdown</div>
-            <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+            <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 15 }}>Project Total Breakdown</div>
+            <div style={{ marginBottom: 16, padding: 12, background: "#f9fafb", borderRadius: 10 }}>
               {/* Vessel & Vessel Install */}
               {(() => {
+                const [vesselExpanded, setVesselExpanded] = React.useState(false);
                 const cat = project.scopeBreakdown.vesselAndInstall;
                 return (
                   <div style={{ marginBottom: 12 }}>
@@ -1779,12 +2059,12 @@ export default function EpsPoolCalculator() {
                       style={{ cursor: 'pointer', marginBottom: 6 }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4, alignItems: 'center' }}>
-                        <span className="text-gray-700 dark:text-gray-200 font-semibold">
+                        <span style={{ color: '#374151', fontWeight: 600 }}>
                           {vesselExpanded ? '▾' : '▸'} Vessel & Vessel Install
                         </span>
-                        <span className="font-semibold text-gray-900 dark:text-gray-100">${fmt(cat.cost)} ({fmt(cat.pct)}%)</span>
+                        <span style={{ fontWeight: 600, color: '#111827' }}>${fmt(cat.cost)} ({fmt(cat.pct)}%)</span>
                       </div>
-                      <div className="h-6 bg-gray-200 dark:bg-gray-600 rounded-md overflow-hidden">
+                      <div style={{ height: 24, background: '#e5e7eb', borderRadius: 6, overflow: 'hidden' }}>
                         <div style={{ height: '100%', background: '#3b82f6', width: `${Math.min(cat.pct, 100)}%`, transition: 'width 0.3s ease', display: 'flex', alignItems: 'center', paddingLeft: 8, color: '#fff', fontSize: 11, fontWeight: 600 }}>
                           {cat.pct > 8 && `${fmt(cat.pct)}%`}
                         </div>
@@ -1792,7 +2072,7 @@ export default function EpsPoolCalculator() {
                     </div>
                     {vesselExpanded && cat.subcategories && (
                       <div style={{ marginLeft: 20, marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
                             <span>• Vessel Materials</span>
                             <span>${fmt(cat.subcategories.materials.cost)} ({fmt(cat.subcategories.materials.pct)}%)</span>
@@ -1810,6 +2090,7 @@ export default function EpsPoolCalculator() {
 
               {/* Equipment & Equipment Install */}
               {(() => {
+                const [equipExpanded, setEquipExpanded] = React.useState(false);
                 const cat = project.scopeBreakdown.equipmentAndInstall;
                 return (
                   <div style={{ marginBottom: 12 }}>
@@ -1818,12 +2099,12 @@ export default function EpsPoolCalculator() {
                       style={{ cursor: 'pointer', marginBottom: 6 }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4, alignItems: 'center' }}>
-                        <span className="text-gray-700 dark:text-gray-200 font-semibold">
+                        <span style={{ color: '#374151', fontWeight: 600 }}>
                           {equipExpanded ? '▾' : '▸'} Equipment & Equipment Install
                         </span>
-                        <span className="font-semibold text-gray-900 dark:text-gray-100">${fmt(cat.cost)} ({fmt(cat.pct)}%)</span>
+                        <span style={{ fontWeight: 600, color: '#111827' }}>${fmt(cat.cost)} ({fmt(cat.pct)}%)</span>
                       </div>
-                      <div className="h-6 bg-gray-200 dark:bg-gray-600 rounded-md overflow-hidden">
+                      <div style={{ height: 24, background: '#e5e7eb', borderRadius: 6, overflow: 'hidden' }}>
                         <div style={{ height: '100%', background: '#8b5cf6', width: `${Math.min(cat.pct, 100)}%`, transition: 'width 0.3s ease', display: 'flex', alignItems: 'center', paddingLeft: 8, color: '#fff', fontSize: 11, fontWeight: 600 }}>
                           {cat.pct > 8 && `${fmt(cat.pct)}%`}
                         </div>
@@ -1831,7 +2112,7 @@ export default function EpsPoolCalculator() {
                     </div>
                     {equipExpanded && cat.subcategories && (
                       <div style={{ marginLeft: 20, marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
                             <span>• Equipment</span>
                             <span>${fmt(cat.subcategories.equipment.cost)} ({fmt(cat.subcategories.equipment.pct)}%)</span>
@@ -1853,10 +2134,10 @@ export default function EpsPoolCalculator() {
                 return (
                   <div style={{ marginBottom: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
-                      <span className="text-gray-700 dark:text-gray-200 font-semibold">Freight / Handling</span>
-                      <span className="font-semibold text-gray-900 dark:text-gray-100">${fmt(cat.cost)} ({fmt(cat.pct)}%)</span>
+                      <span style={{ color: '#374151', fontWeight: 600 }}>Freight / Handling</span>
+                      <span style={{ fontWeight: 600, color: '#111827' }}>${fmt(cat.cost)} ({fmt(cat.pct)}%)</span>
                     </div>
-                    <div className="h-6 bg-gray-200 dark:bg-gray-600 rounded-md overflow-hidden">
+                    <div style={{ height: 24, background: '#e5e7eb', borderRadius: 6, overflow: 'hidden' }}>
                       <div style={{ height: '100%', background: '#10b981', width: `${Math.min(cat.pct, 100)}%`, transition: 'width 0.3s ease', display: 'flex', alignItems: 'center', paddingLeft: 8, color: '#fff', fontSize: 11, fontWeight: 600 }}>
                         {cat.pct > 8 && `${fmt(cat.pct)}%`}
                       </div>
@@ -1871,10 +2152,10 @@ export default function EpsPoolCalculator() {
                 return (
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
-                      <span className="text-gray-700 dark:text-gray-200 font-semibold">Design / Engineering</span>
-                      <span className="font-semibold text-gray-900 dark:text-gray-100">${fmt(cat.cost)} ({fmt(cat.pct)}%)</span>
+                      <span style={{ color: '#374151', fontWeight: 600 }}>Design / Engineering</span>
+                      <span style={{ fontWeight: 600, color: '#111827' }}>${fmt(cat.cost)} ({fmt(cat.pct)}%)</span>
                     </div>
-                    <div className="h-6 bg-gray-200 dark:bg-gray-600 rounded-md overflow-hidden">
+                    <div style={{ height: 24, background: '#e5e7eb', borderRadius: 6, overflow: 'hidden' }}>
                       <div style={{ height: '100%', background: '#ef4444', width: `${Math.min(cat.pct, 100)}%`, transition: 'width 0.3s ease', display: 'flex', alignItems: 'center', paddingLeft: 8, color: '#fff', fontSize: 11, fontWeight: 600 }}>
                         {cat.pct > 8 && `${fmt(cat.pct)}%`}
                       </div>
@@ -1887,11 +2168,11 @@ export default function EpsPoolCalculator() {
 
           {/* Per-Vessel Breakdown */}
           <div>
-            <div className="font-semibold mb-3 text-base dark:text-gray-100">Per-Vessel Breakdown</div>
+            <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 15 }}>Per-Vessel Breakdown</div>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
-                  <tr className="bg-gray-50 dark:bg-gray-700/50">
+                  <tr style={{ background: "#f9fafb" }}>
                     <th style={thLeft}>Vessel</th>
                     <th style={th}>Vessel & Install</th>
                     <th style={th}>Equipment & Install</th>
@@ -1920,28 +2201,28 @@ export default function EpsPoolCalculator() {
 
       {/* Quick Add Modal */}
       {showQuickAdd && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000]">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-[500px] w-[90%] max-h-[90vh] overflow-auto">
-            <div className="flex justify-between items-center mb-5">
-              <h2 className="text-xl font-semibold m-0 dark:text-gray-100">Add {quickAddType}</h2>
-              <button onClick={() => setShowQuickAdd(false)} className="bg-transparent border-none text-2xl cursor-pointer p-1 dark:text-gray-300">×</button>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 500, width: "90%", maxHeight: "90vh", overflow: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <h2 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>Add {quickAddType}</h2>
+              <button onClick={() => setShowQuickAdd(false)} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", padding: 4 }}>×</button>
             </div>
 
             <div style={{ display: "grid", gap: 16 }}>
               <div>
-                <label className="block text-sm font-semibold mb-1.5 dark:text-gray-100">Vessel Name</label>
+                <label style={{ display: "block", fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Vessel Name</label>
                 <input
                   type="text"
                   value={quickAddName}
                   onChange={e => setQuickAddName(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
+                  style={{ width: "100%", padding: "10px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14 }}
                   placeholder="e.g., CP-1"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold mb-1.5 dark:text-gray-100">
-                  Bather Capacity <span className="text-xs font-normal text-gray-500 dark:text-gray-400">(1 person = 10 sq ft)</span>
+                <label style={{ display: "block", fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
+                  Bather Capacity <span style={{ fontSize: 12, fontWeight: 400, color: "#6b7280" }}>(1 person = 10 sq ft)</span>
                 </label>
                 <input
                   type="number"
@@ -1949,15 +2230,15 @@ export default function EpsPoolCalculator() {
                   max="50"
                   value={quickAddBathers}
                   onChange={e => setQuickAddBathers(Number(e.target.value))}
-                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
+                  style={{ width: "100%", padding: "10px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14 }}
                 />
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
                   Target area: {fmt(quickAddBathers * 10)} sq ft
                 </div>
               </div>
 
-              <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg">
-                <div className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-200">Suggested Dimensions</div>
+              <div style={{ background: "#f9fafb", padding: 12, borderRadius: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "#374151" }}>Suggested Dimensions</div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                   <div>
                     <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Length (ft)</label>
@@ -2029,13 +2310,13 @@ export default function EpsPoolCalculator() {
               <div style={row}><span className="l">Startup (project)</span><b>${fmt(project.startup)}</b></div>
               <div style={row}><span className="l">Chem Storage (project)</span><b>${fmt(project.chemStorage)}</b></div>
               <div style={row}><span className="l">Rigging</span><b>${fmt(project.rigging)}</b></div>
-              <div className="h-px bg-gray-200 dark:bg-gray-700 my-2.5" />
+              <div style={{ height: 1, background: "#e5e7eb", margin: "10px 0" }} />
               <div style={row}><span className="l">Design Contingency</span><b>${fmt(project.designContAmount)}</b></div>
               <div style={row}><span className="l">Waste</span><b>${fmt(project.wasteAmount)}</b></div>
               <div style={row}><span className="l">OH&P</span><b>${fmt(project.ohpAmount)}</b></div>
               <div style={row}><span className="l">Warranty</span><b>${fmt(project.warrantyReserve)}</b></div>
             </div>
-            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+            <div style={{ background: "#f9fafb", borderRadius: 10, padding: 12 }}>
               <div style={rowBig}><span>Client Price</span><b>${fmt(project.clientPrice)}</b></div>
               <div style={row}><span>Profit (≈ OH&P amount)</span><b>${fmt(project.ohpAmount)}</b></div>
               <div style={row}><span>Gross Margin</span><b>{fmt(project.grossMarginPct)}%</b></div>
@@ -2045,14 +2326,14 @@ export default function EpsPoolCalculator() {
         </Card>
 
         <Card title="Per-Vessel Client Totals">
-          <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+          <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>
             Each vessel includes proportional allocations of project-level items (freight, design/eng, rep onsite, startup, chemical storage, rigging),
             plus its share of design contingency, waste, OH&amp;P, and warranty. Sums match project totals.
           </div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
-                <tr className="bg-gray-50 dark:bg-gray-700/50">
+                <tr style={{ background: "#f9fafb" }}>
                   <th style={th}>Vessel</th>
                   <th style={th}>Type</th>
                   <th style={th}>Finish SF</th>
@@ -2176,16 +2457,18 @@ export default function EpsPoolCalculator() {
                             {W.toFixed(1)}'
                           </text>
 
-                          {/* Bench */}
-                          {v.hasBench && (() => {
-                            const bL = clampN(v.benchLength_ft);
-                            const bD = clampN(v.benchDepth_ft);
-                            // Position bench along bottom wall
-                            const xPos = padding + (L * scale - bL * scale) / 2;
-                            const yPos = padding + W * scale - bD * scale - 2;
+                          {/* Benches */}
+                          {v.benches.map((bench, idx) => {
+                            // Position benches along the walls (simplified positioning)
+                            const bL = clampN(bench.length_ft);
+                            const bD = clampN(bench.depth_ft);
+                            const bH = clampN(bench.seat_height_ft);
+                            // Place alternating benches on different walls for visualization
+                            const xPos = idx % 2 === 0 ? padding + 2 : padding + L * scale - bL * scale - 2;
+                            const yPos = padding + (idx * W * scale) / (v.benches.length + 1);
 
                             return (
-                              <g key="bench">
+                              <g key={`bench-${idx}`}>
                                 <rect
                                   x={xPos}
                                   y={yPos}
@@ -2205,7 +2488,7 @@ export default function EpsPoolCalculator() {
                                   fontWeight="600"
                                   dominantBaseline="middle"
                                 >
-                                  Bench
+                                  {bench.name || `B${idx + 1}`}
                                 </text>
                                 <text
                                   x={xPos + (bL * scale) / 2}
@@ -2219,19 +2502,19 @@ export default function EpsPoolCalculator() {
                                 </text>
                               </g>
                             );
-                          })()}
+                          })}
 
                           {/* Steps */}
-                          {v.hasSteps && (() => {
-                            const sW = clampN(v.stepsWidth_ft);
-                            const sTread = clampN(v.stepTread_ft);
-                            const nRisers = Math.max(1, Math.round(clampN(v.stepsCount)));
-                            // Position steps in bottom left corner
-                            const xPos = padding + 4;
+                          {v.steps.map((step, idx) => {
+                            const sW = clampN(step.width_ft);
+                            const sTread = clampN(step.tread_ft);
+                            const nRisers = clampN(step.n_risers);
+                            // Position steps in corners or along walls
+                            const xPos = idx % 2 === 0 ? padding + 4 : padding + L * scale - sW * scale - 4;
                             const yPos = padding + W * scale - nRisers * sTread * scale - 4;
 
                             return (
-                              <g key="steps">
+                              <g key={`step-${idx}`}>
                                 {/* Draw stepped shape */}
                                 {Array.from({ length: nRisers }).map((_, riserIdx) => (
                                   <rect
@@ -2259,7 +2542,7 @@ export default function EpsPoolCalculator() {
                                 </text>
                               </g>
                             );
-                          })()}
+                          })}
 
                           {/* Water depth annotation */}
                           <text
@@ -2281,8 +2564,8 @@ export default function EpsPoolCalculator() {
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 16 }}>
                     {/* Geometry */}
                     <div>
-                      <div className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">Geometry</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-col gap-1">
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>Geometry</div>
+                      <div style={{ fontSize: 12, color: "#6b7280", display: "flex", flexDirection: "column", gap: 4 }}>
                         <div>Plan Area: <strong>{fmt(w.planArea_ft2)} ft²</strong></div>
                         <div>Perimeter: <strong>{fmt(w.perimeter_ft)} ft</strong></div>
                         <div>Interior Area: <strong>{fmt(w.interiorArea_ft2)} ft²</strong></div>
@@ -2293,8 +2576,8 @@ export default function EpsPoolCalculator() {
 
                     {/* Component Weights */}
                     <div>
-                      <div className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">Component Weights</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-col gap-1">
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>Component Weights</div>
+                      <div style={{ fontSize: 12, color: "#6b7280", display: "flex", flexDirection: "column", gap: 4 }}>
                         <div>Water: <strong>{fmt(w.water_lb)} lb</strong> ({fmt(w.water_psf)} psf)</div>
                         <div>Tile: <strong>{fmt(w.tile_lb)} lb</strong> ({fmt(w.tile_psf)} psf)</div>
                         {constructionType === "Stainless Steel" && (
@@ -2308,25 +2591,25 @@ export default function EpsPoolCalculator() {
                     </div>
 
                     {/* Totals */}
-                    <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg">
-                      <div className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">Total Loads</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-col gap-1">
+                    <div style={{ background: "#f9fafb", padding: 12, borderRadius: 8 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>Total Loads</div>
+                      <div style={{ fontSize: 12, color: "#6b7280", display: "flex", flexDirection: "column", gap: 4 }}>
                         {constructionType === "Stainless Steel" ? (
                           <>
-                            <div className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                            <div style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>
                               Stainless Total: {fmt(w.stainless_total_lb)} lb
                             </div>
                             <div>Load: <strong>{fmt(w.stainless_psf)} psf</strong></div>
                           </>
                         ) : (
                           <>
-                            <div className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                            <div style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>
                               EPS Total: {fmt(w.eps_total_lb)} lb
                             </div>
                             <div>Load: <strong>{fmt(w.eps_psf)} psf</strong></div>
                           </>
                         )}
-                        <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #e5e7eb" }}>
                           <div>Net Water Vol: <strong>{fmt(w.netWaterVol_ft3)} ft³</strong></div>
                           <div>Displaced Vol: <strong>{fmt(w.displacedVol_ft3)} ft³</strong></div>
                         </div>
@@ -2335,12 +2618,12 @@ export default function EpsPoolCalculator() {
                   </div>
 
                   {/* Benches & Steps Summary */}
-                  {(v.hasBench || v.hasSteps) && (
-                    <div className="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-                      <div className="text-xs font-semibold mb-1 dark:text-yellow-200">Features:</div>
-                      <div className="text-[11px] text-yellow-900 dark:text-yellow-200">
-                        {v.hasBench && <div>Bench: {(v.benchLength_ft * 12).toFixed(0)}" × {(v.benchDepth_ft * 12).toFixed(0)}" × {(v.benchHeight_ft * 12).toFixed(0)}"</div>}
-                        {v.hasSteps && <div>Steps: {v.stepsCount} steps, {(v.stepsWidth_ft * 12).toFixed(0)}" wide</div>}
+                  {(v.benches.length > 0 || v.steps.length > 0) && (
+                    <div style={{ marginTop: 12, padding: 12, background: "#fef3c7", borderRadius: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Features:</div>
+                      <div style={{ fontSize: 11, color: "#92400e" }}>
+                        {v.benches.length > 0 && <div>{v.benches.length} bench(es)</div>}
+                        {v.steps.length > 0 && <div>{v.steps.length} step flight(s)</div>}
                       </div>
                     </div>
                   )}
@@ -2353,10 +2636,10 @@ export default function EpsPoolCalculator() {
           <details>
             <summary style={summary}>Weight Calculation Assumptions (click to expand)</summary>
             <Card>
-              <div className="text-sm text-gray-700 dark:text-gray-300 grid gap-3">
+              <div style={{ fontSize: 13, color: "#374151", display: "grid", gap: 12 }}>
                 <div>
-                  <div className="font-semibold mb-1 dark:text-gray-200">Material Densities & Weights</div>
-                  <ul className="m-0 pl-5 flex flex-col gap-1">
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>Material Densities & Weights</div>
+                  <ul style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 4 }}>
                     <li>Water: {DENSITY_WATER} lb/ft³</li>
                     <li>Tile + Setting: {TILE_PSF} lb/ft² (applied to all exposed interior surfaces)</li>
                     <li>Stainless 12ga (304L): {SS12_PSF} lb/ft² (walls, benches, steps)</li>
@@ -2366,7 +2649,7 @@ export default function EpsPoolCalculator() {
                   </ul>
                 </div>
                 <div>
-                  <div className="font-semibold mb-1 dark:text-gray-200">Calculation Method</div>
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>Calculation Method</div>
                   <ul style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 4 }}>
                     <li>Water volume accounts for displacement from benches and steps</li>
                     <li>Interior surface area calculated for all exposed surfaces (floor, walls, benches, steps)</li>

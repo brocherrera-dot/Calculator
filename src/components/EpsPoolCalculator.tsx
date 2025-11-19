@@ -348,6 +348,47 @@ export default function EpsPoolCalculator() {
   /* Project Name */
   const [projectName, setProjectName] = useState("Untitled Project");
 
+  /* Client & Project Information */
+  const [clientInfo, setClientInfo] = useState({
+    clientName: '',
+    contactEmail: '',
+    contactPhone: '',
+    projectAddress: '',
+    proposalDate: new Date().toISOString().split('T')[0],
+    proposalNumber: `PP-${Date.now().toString().slice(-6)}`,
+  });
+
+  /* Project Notes & Scope */
+  const [projectNotes, setProjectNotes] = useState({
+    scopeNotes: '',
+    assumptions: '',
+    inclusions: `Fabrication and delivery of modular EPS foam vessels
+Mechanical installation and waterproofing by licensed third-party installer
+Tile finishes and vessel detailing (Depth markers inside of the vessels) (Tile allowance $8/sf)
+Complete equipment packages: chiller/heater, pumps, chemical controllers, Clear Comfort AOP system, valves, and chemical tanks
+Hydraulic and permit-ready drawings prepared by an experienced design & engineering firm
+Prana Plunge site visits during installation for supervision and commissioning
+Project coordination, documentation, and field assistance
+Freight, customs, or import duties
+Handrails and ADA transfer grab bars`,
+    exclusions: `Structural slabs, decks, and drains outside vessel perimeter
+Refrigeration line setting for chiller units
+Slab removal, coring, or core drilling for plumbing or drain penetrations
+Exterior/deck finishes (wood, stone, tile, plaster, or architectural facades outside vessel scope)
+Safety equipment and signage (barriers, depth markers, warning signage)
+Electrical/HVAC tie-ins beyond provided equipment pads
+Permit fees, local inspections, and all taxes (TBD)
+Specialty finishes, tile material supply, or decorative upgrades unless noted
+Engineering stamps or special inspections not defined in base scope`,
+  });
+
+  /* Photos */
+  const [photos, setPhotos] = useState<Array<{
+    id: string;
+    dataUrl: string;
+    caption: string;
+  }>>([]);
+
   /* Quick Add Modal State */
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickAddType, setQuickAddType] = useState<VesselType>("Cold Plunge");
@@ -447,56 +488,258 @@ export default function EpsPoolCalculator() {
   /* ---------------------- PDF export helper ---------------------- */
   const exportToPDF = () => {
     const doc = new jsPDF();
-
     const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
     let yPos = 20;
 
-    // Header
-    doc.setFontSize(18);
+    // ====== COVER PAGE ======
+    doc.setFillColor(59, 130, 246); // Blue background
+    doc.rect(0, 0, pageWidth, 80, "F");
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(32);
     doc.setFont("helvetica", "bold");
-    doc.text("EPS Pool Calculator - Project Estimate", pageWidth / 2, yPos, { align: "center" });
+    doc.text("PRANA PLUNGE", pageWidth / 2, 40, { align: "center" });
+
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "normal");
+    doc.text("Commercial Pool & Spa Solutions", pageWidth / 2, 55, { align: "center" });
+
+    // Reset text color
+    doc.setTextColor(0, 0, 0);
+
+    // Proposal title
+    yPos = 110;
+    doc.setFontSize(28);
+    doc.setFont("helvetica", "bold");
+    doc.text("PROJECT PROPOSAL", pageWidth / 2, yPos, { align: "center" });
+
+    yPos += 20;
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "normal");
+    doc.text(projectName || "Untitled Project", pageWidth / 2, yPos, { align: "center" });
+
+    // Client info on cover
+    if (clientInfo.clientName) {
+      yPos += 30;
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text("PREPARED FOR:", pageWidth / 2, yPos, { align: "center" });
+      yPos += 8;
+      doc.setFont("helvetica", "normal");
+      doc.text(clientInfo.clientName, pageWidth / 2, yPos, { align: "center" });
+    }
+
+    // Proposal details
+    yPos = pageHeight - 60;
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("Proposal Number:", 20, yPos);
+    doc.setFont("helvetica", "normal");
+    doc.text(clientInfo.proposalNumber, 80, yPos);
+
+    yPos += 6;
+    doc.setFont("helvetica", "bold");
+    doc.text("Date:", 20, yPos);
+    doc.setFont("helvetica", "normal");
+    doc.text(new Date(clientInfo.proposalDate).toLocaleDateString(), 80, yPos);
+
+    yPos += 6;
+    doc.setFont("helvetica", "bold");
+    doc.text("Valid For:", 20, yPos);
+    doc.setFont("helvetica", "normal");
+    doc.text("30 Days", 80, yPos);
+
+    // ====== CLIENT INFORMATION PAGE ======
+    doc.addPage();
+    yPos = 20;
+
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text("CLIENT INFORMATION", 14, yPos);
+    yPos += 15;
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("Client Name:", 20, yPos);
+    doc.setFont("helvetica", "normal");
+    doc.text(clientInfo.clientName || "N/A", 70, yPos);
+
+    yPos += 8;
+    doc.setFont("helvetica", "bold");
+    doc.text("Contact Email:", 20, yPos);
+    doc.setFont("helvetica", "normal");
+    doc.text(clientInfo.contactEmail || "N/A", 70, yPos);
+
+    yPos += 8;
+    doc.setFont("helvetica", "bold");
+    doc.text("Contact Phone:", 20, yPos);
+    doc.setFont("helvetica", "normal");
+    doc.text(clientInfo.contactPhone || "N/A", 70, yPos);
+
+    yPos += 8;
+    doc.setFont("helvetica", "bold");
+    doc.text("Project Address:", 20, yPos);
+    doc.setFont("helvetica", "normal");
+    const addressLines = doc.splitTextToSize(clientInfo.projectAddress || "N/A", pageWidth - 80);
+    doc.text(addressLines, 70, yPos);
+    yPos += addressLines.length * 6;
 
     yPos += 10;
-    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("Construction Type:", 20, yPos);
     doc.setFont("helvetica", "normal");
-    doc.text(`Date: ${new Date().toLocaleDateString()}`, pageWidth / 2, yPos, { align: "center" });
+    doc.text(constructionType, 70, yPos);
 
-    yPos += 5;
-    doc.text(`Construction Type: ${constructionType}`, pageWidth / 2, yPos, { align: "center" });
+    // Project notes if provided
+    if (projectNotes.scopeNotes) {
+      yPos += 15;
+      doc.setFont("helvetica", "bold");
+      doc.text("Project Overview:", 20, yPos);
+      yPos += 6;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      const scopeLines = doc.splitTextToSize(projectNotes.scopeNotes, pageWidth - 40);
+      doc.text(scopeLines, 20, yPos);
+      yPos += scopeLines.length * 5;
+    }
 
+    // ====== SCOPE OF WORK PAGE ======
+    doc.addPage();
+    yPos = 20;
+
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text("SCOPE OF WORK", 14, yPos);
+    yPos += 15;
+
+    // INCLUSIONS
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text("INCLUSIONS", 14, yPos);
+    yPos += 8;
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+
+    // Parse inclusions from state (one per line)
+    const inclusions = projectNotes.inclusions
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+
+    inclusions.forEach(item => {
+      if (yPos > 270) {
+        doc.addPage();
+        yPos = 20;
+      }
+      const lines = doc.splitTextToSize(`• ${item}`, pageWidth - 30);
+      doc.text(lines, 20, yPos);
+      yPos += lines.length * 5;
+    });
+
+    yPos += 10;
+
+    // EXCLUSIONS
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text("EXCLUSIONS", 14, yPos);
+    yPos += 8;
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+
+    // Parse exclusions from state (one per line)
+    const exclusions = projectNotes.exclusions
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+
+    exclusions.forEach(item => {
+      if (yPos > 270) {
+        doc.addPage();
+        yPos = 20;
+      }
+      const lines = doc.splitTextToSize(`• ${item}`, pageWidth - 30);
+      doc.text(lines, 20, yPos);
+      yPos += lines.length * 5;
+    });
+
+    // ====== PHOTOS PAGE (if any) ======
+    if (photos.length > 0) {
+      doc.addPage();
+      yPos = 20;
+
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text("PROJECT PHOTOS", 14, yPos);
+      yPos += 15;
+
+      let photoIndex = 0;
+      const photosPerPage = 4;
+      const photoWidth = 80;
+      const photoHeight = 60;
+
+      photos.forEach((photo, idx) => {
+        if (photoIndex > 0 && photoIndex % photosPerPage === 0) {
+          doc.addPage();
+          yPos = 20;
+        }
+
+        try {
+          doc.addImage(photo.dataUrl, 'JPEG', 20, yPos, photoWidth, photoHeight);
+          doc.setFontSize(9);
+          doc.setFont("helvetica", "italic");
+          doc.text(photo.caption || `Photo ${idx + 1}`, 20, yPos + photoHeight + 5);
+        } catch (e) {
+          console.error('Error adding photo to PDF:', e);
+        }
+
+        yPos += photoHeight + 15;
+        photoIndex++;
+      });
+    }
+
+    // ====== PRICING SECTION ======
+    doc.addPage();
+    yPos = 20;
+
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text("PROJECT INVESTMENT", 14, yPos);
     yPos += 15;
 
     // Vessels Summary Table
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
-    doc.text("Vessels Summary", 14, yPos);
+    doc.text("Project Scope", 14, yPos);
     yPos += 5;
 
     const vesselsSummaryData = vesselCalcs.map(c => {
-      const row = project.perVesselRows.find(r => r.id === c.vessel.id)!;
       return [
         c.vessel.name,
         c.vessel.type,
-        `${c.vessel.length_ft.toFixed(1)}' x ${c.vessel.width_ft.toFixed(1)}' x ${c.vessel.waterDepth_ft.toFixed(1)}'`,
-        fmt(row.finishSf),
-        `$${fmt(row.clientTotal)}`
+        `${c.vessel.length_ft.toFixed(1)}' × ${c.vessel.width_ft.toFixed(1)}' × ${c.vessel.waterDepth_ft.toFixed(1)}'`,
+        fmt(c.areas.finishSf)
       ];
     });
 
     autoTable(doc, {
       startY: yPos,
-      head: [["Vessel", "Type", "Dimensions (L×W×D)", "Finish SF", "Client Total"]],
+      head: [["Vessel", "Type", "Dimensions (L×W×D)", "Finish SF"]],
       body: vesselsSummaryData,
       theme: "striped",
+      headStyles: {
+        fillColor: [59, 130, 246]
+      },
       columnStyles: {
-        3: { halign: "right" },
-        4: { halign: "right", fontStyle: "bold" }
+        3: { halign: "right" }
       }
     });
 
     yPos = (doc as any).lastAutoTable.finalY + 15;
 
-    // Per-Vessel Breakdown Table
+    // Cost Breakdown by Category
     if (yPos > 240) {
       doc.addPage();
       yPos = 20;
@@ -504,40 +747,51 @@ export default function EpsPoolCalculator() {
 
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
-    doc.text("Per-Vessel Breakdown", 14, yPos);
-    yPos += 5;
+    doc.text("Investment Breakdown", 14, yPos);
+    yPos += 8;
 
-    const vesselsBreakdownData = project.perVesselRows.map(r => [
-      r.name,
-      r.type,
-      fmt(r.finishSf),
-      `$${fmt(r.preContBase)}`,
-      `$${fmt(r.designCont)}`,
-      `$${fmt(r.waste)}`,
-      `$${fmt(r.ohp)}`,
-      `$${fmt(r.warranty)}`,
-      `$${fmt(r.clientTotal)}`
-    ]);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+
+    const categoryBreakdown = [
+      ["Vessels & Installation", `$${fmt(project.scopeBreakdown?.vesselAndInstall.cost || 0)}`],
+      ["Equipment & Installation", `$${fmt(project.scopeBreakdown?.equipmentAndInstall.cost || 0)}`],
+      ["Freight & Handling", `$${fmt(project.scopeBreakdown?.freightHandling.cost || 0)}`],
+      ["Design & Engineering", `$${fmt(project.scopeBreakdown?.designEngineering.cost || 0)}`],
+    ];
 
     autoTable(doc, {
       startY: yPos,
-      head: [["Vessel", "Type", "Finish SF", "Pre-Cont Base", "Design Cont", "Waste", "OH&P", "Warranty", "Client Total"]],
-      body: vesselsBreakdownData,
-      theme: "striped",
+      body: categoryBreakdown,
+      theme: "plain",
       columnStyles: {
-        2: { halign: "right" },
-        3: { halign: "right" },
-        4: { halign: "right" },
-        5: { halign: "right" },
-        6: { halign: "right" },
-        7: { halign: "right" },
-        8: { halign: "right", fontStyle: "bold" }
+        0: { cellWidth: 100, fontStyle: "bold" },
+        1: { halign: "right", cellWidth: 60, fontStyle: "bold" }
       }
     });
 
-    yPos = (doc as any).lastAutoTable.finalY + 15;
+    yPos = (doc as any).lastAutoTable.finalY + 10;
 
-    // Equipment Packages Section
+    // Total Investment Box
+    doc.setFillColor(59, 130, 246);
+    doc.rect(14, yPos, pageWidth - 28, 20, "F");
+
+    yPos += 6;
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text(`TOTAL INVESTMENT: $${fmt(project.clientPrice)}`, 20, yPos);
+
+    yPos += 8;
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Total Finish Area: ${fmt(project.finishSfTotal)} sf  |  Cost per SF: $${fmt(project.effectivePerSf)}`, 20, yPos);
+
+    // Reset text color
+    doc.setTextColor(0, 0, 0);
+    yPos += 20;
+
+    // Equipment Packages Section (no pricing)
     if (yPos > 240) {
       doc.addPage();
       yPos = 20;
@@ -545,8 +799,8 @@ export default function EpsPoolCalculator() {
 
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
-    doc.text("Equipment Packages", 14, yPos);
-    yPos += 5;
+    doc.text("Included Equipment Packages", 14, yPos);
+    yPos += 8;
 
     vesselCalcs.forEach((calc) => {
       const pkg = packages.find(p => p.key === calc.vessel.equipmentPackageKey);
@@ -565,7 +819,7 @@ export default function EpsPoolCalculator() {
       doc.setFontSize(8);
       doc.setFont("helvetica", "normal");
       pkg.items.forEach(item => {
-        doc.text(`  • ${item.label}: $${fmt(item.cost)}`, 14, yPos);
+        doc.text(`  • ${item.label}`, 14, yPos);
         yPos += 4;
       });
       yPos += 3;
@@ -573,19 +827,22 @@ export default function EpsPoolCalculator() {
 
     yPos += 10;
 
-    // Weight Calculations Table
-    if (yPos > 220) {
+    // Weight Calculations Table with PSF
+    if (yPos > 200) {
       doc.addPage();
       yPos = 20;
     }
 
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
-    doc.text("Weight Calculations", 14, yPos);
+    doc.text("Structural Load Analysis", 14, yPos);
     yPos += 5;
 
     const weightData = vesselCalcs.map(c => {
       const w = c.weights;
+      const totalLoad = constructionType === "EPS" ? w.eps_total_lb : w.stainless_total_lb;
+      const psf = w.planArea_ft2 > 0 ? totalLoad / w.planArea_ft2 : 0;
+
       return [
         c.vessel.name,
         fmt(w.planArea_ft2),
@@ -593,93 +850,277 @@ export default function EpsPoolCalculator() {
         fmt(w.tile_lb),
         constructionType === "EPS" ? fmt(w.eps_lb) : fmt(w.stainless_lb),
         fmt(w.bathers_lb),
-        constructionType === "EPS" ? fmt(w.eps_total_lb) : fmt(w.stainless_total_lb)
+        fmt(totalLoad),
+        fmt(psf)
       ];
     });
 
     autoTable(doc, {
       startY: yPos,
-      head: [["Vessel", "Plan Area (ft²)", "Water (lb)", "Tile (lb)", constructionType === "EPS" ? "EPS (lb)" : "SS (lb)", "Bathers (lb)", "Total Load (lb)"]],
+      head: [["Vessel", "Plan Area (ft²)", "Water (lb)", "Tile (lb)", constructionType === "EPS" ? "EPS (lb)" : "SS (lb)", "Bathers (lb)", "Total Load (lb)", "PSF"]],
       body: weightData,
       theme: "striped",
+      headStyles: {
+        fillColor: [59, 130, 246],
+        fontSize: 8
+      },
+      bodyStyles: {
+        fontSize: 8
+      },
       columnStyles: {
         1: { halign: "right" },
         2: { halign: "right" },
         3: { halign: "right" },
         4: { halign: "right" },
         5: { halign: "right" },
-        6: { halign: "right", fontStyle: "bold" }
+        6: { halign: "right", fontStyle: "bold" },
+        7: { halign: "right", fontStyle: "bold" }
       }
     });
 
-    yPos = (doc as any).lastAutoTable.finalY + 15;
+    yPos = (doc as any).lastAutoTable.finalY + 10;
 
-    // Project Totals Section
-    if (yPos > 180) {
+    // ====== TERMS & CONDITIONS PAGE ======
+    doc.addPage();
+    yPos = 20;
+
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text("TERMS & CONDITIONS", 14, yPos);
+    yPos += 15;
+
+    // GENERAL CONDITIONS & SITE REQUIREMENTS
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text("GENERAL CONDITIONS & SITE REQUIREMENTS", 14, yPos);
+    yPos += 8;
+
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+
+    const generalConditions = [
+      "1. Site Access: Client ensures clear access for deliveries (containers/trucks) and adequate space for staging materials.",
+      "2. Utilities: Client to provide electricity and water required for construction activities.",
+      "3. Permits: Client responsible for all local building permits; Prana Plunge will provide necessary documentation.",
+      "4. Storage: Client ensures covered, secure storage for equipment and materials throughout construction.",
+      "5. Coordination: Client coordinates with any third-party contractors (electrical, plumbing) to avoid conflicts or delays.",
+      "6. Changes: Any client-requested changes beyond this scope will require written approval and may incur additional costs.",
+      "7. Timeline: Construction schedule is subject to change based on material availability, weather, or unforeseen site conditions.",
+    ];
+
+    generalConditions.forEach(item => {
+      if (yPos > 270) {
+        doc.addPage();
+        yPos = 20;
+      }
+      const lines = doc.splitTextToSize(item, pageWidth - 28);
+      doc.text(lines, 14, yPos);
+      yPos += lines.length * 4 + 2;
+    });
+
+    yPos += 8;
+
+    // THIRD-PARTY CONTRACTOR TERMS
+    if (yPos > 240) {
       doc.addPage();
       yPos = 20;
     }
 
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
-    doc.text("Project Totals", 14, yPos);
+    doc.text("THIRD-PARTY CONTRACTOR TERMS", 14, yPos);
     yPos += 8;
+
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+
+    const thirdPartyTerms = [
+      "1. Installer: Client and Prana Plunge agree to hire a licensed third-party installer for mechanical and waterproofing work.",
+      "2. Installer Responsibilities: Installer to provide mechanical installation, epoxy waterproofing, pressure testing, tile setting, and grouting.",
+      "3. Licensing: Installer must be licensed per local jurisdiction and carry required insurance (general liability, workers' compensation).",
+      "4. Contract: Client or Prana Plunge will execute a separate agreement with the installer; installer is not an employee or agent of Prana Plunge.",
+      "5. Payment: Client responsible for timely payment to installer per agreed schedule; delays in payment may affect project timeline.",
+      "6. Workmanship Warranty: Installer provides workmanship warranty for all mechanical and waterproofing installation per their agreement with Client.",
+      "7. Quality: Prana Plunge will coordinate with installer to ensure work meets specifications, but installer solely responsible for workmanship and execution.",
+      "8. Site Safety: Installer responsible for site safety, compliance with OSHA and local regulations, and cleanliness throughout installation.",
+    ];
+
+    thirdPartyTerms.forEach(item => {
+      if (yPos > 270) {
+        doc.addPage();
+        yPos = 20;
+      }
+      const lines = doc.splitTextToSize(item, pageWidth - 28);
+      doc.text(lines, 14, yPos);
+      yPos += lines.length * 4 + 2;
+    });
+
+    yPos += 8;
+
+    // TERMS & CONDITIONS
+    if (yPos > 240) {
+      doc.addPage();
+      yPos = 20;
+    }
+
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text("PAYMENT, WARRANTY, AND LIABILITY", 14, yPos);
+    yPos += 8;
+
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+
+    const paymentTerms = [
+      "Payment Terms: Payments due per milestone schedule outlined below. Late payments subject to 1.5% monthly interest.",
+
+      "Product Warranty: Prana Plunge warrants EPS vessels free from manufacturing defects for 10 years from delivery. Equipment warranted per manufacturer terms (typically 1-3 years). Client responsible for routine maintenance.",
+
+      "Installation Warranty: Mechanical installation and waterproofing warranted by third-party installer per their agreement with Client (typically 1-2 years workmanship warranty).",
+
+      "Limitation of Liability: Prana Plunge's total liability limited to project contract price. Prana Plunge not liable for consequential, indirect, or incidental damages including lost profits, business interruption, or property damage.",
+
+      "Client Obligations: Client to ensure site readiness, proper permits, and coordination with utilities and third parties. Failure may result in delays or additional costs borne by Client.",
+
+      "Force Majeure: Neither party liable for delays due to events beyond reasonable control (weather, material shortages, labor disputes, natural disasters, government actions).",
+
+      "Dispute Resolution: Disputes to be resolved through mediation in good faith. If unresolved, binding arbitration per AAA Commercial Arbitration Rules. Prevailing party entitled to reasonable attorney fees.",
+
+      "Governing Law: Agreement governed by laws of California without regard to conflict of law provisions.",
+    ];
+
+    paymentTerms.forEach(item => {
+      if (yPos > 270) {
+        doc.addPage();
+        yPos = 20;
+      }
+      const lines = doc.splitTextToSize(item, pageWidth - 28);
+      doc.text(lines, 14, yPos);
+      yPos += lines.length * 4 + 3;
+    });
+
+    // ====== PAYMENT SCHEDULE PAGE ======
+    doc.addPage();
+    yPos = 20;
+
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text("PAYMENT SCHEDULE", 14, yPos);
+    yPos += 15;
 
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
+    doc.text("Payments are due according to the following milestone schedule:", 14, yPos);
+    yPos += 10;
 
-    const totalsData = [
-      ["Finish Surface Area", `${fmt(project.finishSfTotal)} sf`],
-      ["Materials (vessels)", `$${fmt(project.materialsTotal)}`],
-      ["Equipment (vessels)", `$${fmt(project.equipmentSubtotalVessels)}`],
-      ["Labor (vessels)", `$${fmt(project.laborSubtotal)}`],
-      ["Freight / Delivery", `$${fmt(project.freightTotal)}`],
-      ["Design & Engineering", `$${fmt(project.designEngineering)}`],
-      ["Rep Onsite", `$${fmt(project.repFee)}`],
-      ["Startup", `$${fmt(project.startup)}`],
-      ["Chem Storage", `$${fmt(project.chemStorage)}`],
-      ["Rigging", `$${fmt(project.rigging)}`],
-      ["", ""],
-      ["Design Contingency", `$${fmt(project.designContAmount)}`],
-      ["Waste", `$${fmt(project.wasteAmount)}`],
-      ["OH&P", `$${fmt(project.ohpAmount)}`],
-      ["Warranty Reserve", `$${fmt(project.warrantyReserve)}`],
-      ["", ""],
+    const totalPrice = project.clientPrice;
+    const deposit = totalPrice * 0.20;
+    const drawings = totalPrice * 0.50;
+    const shipping = totalPrice * 0.20;
+    const startup = totalPrice * 0.10;
+
+    const paymentScheduleData = [
+      ["Milestone 1: Contract Signing", "20%", `$${fmt(deposit)}`, "Upon execution of contract"],
+      ["Milestone 2: Design & Drawings Complete", "50%", `$${fmt(drawings)}`, "Upon approval of hydraulic drawings"],
+      ["Milestone 3: Vessel Shipping", "20%", `$${fmt(shipping)}`, "When vessels ship from manufacturer"],
+      ["Milestone 4: Startup & Commissioning", "10%", `$${fmt(startup)}`, "Upon successful startup and handoff"],
     ];
 
     autoTable(doc, {
       startY: yPos,
-      body: totalsData,
-      theme: "plain",
+      head: [["Milestone", "Percentage", "Amount", "Trigger"]],
+      body: paymentScheduleData,
+      theme: "striped",
+      headStyles: {
+        fillColor: [59, 130, 246],
+        fontStyle: "bold"
+      },
       columnStyles: {
-        0: { cellWidth: 80 },
-        1: { halign: "right", cellWidth: 60 }
+        1: { halign: "center" },
+        2: { halign: "right", fontStyle: "bold" }
       }
     });
 
-    yPos = (doc as any).lastAutoTable.finalY + 5;
+    yPos = (doc as any).lastAutoTable.finalY + 15;
 
-    // Final totals box
-    doc.setFillColor(255, 255, 255);
-    doc.rect(14, yPos, pageWidth - 28, 35, "F");
-    doc.setDrawColor(229, 231, 235);
-    doc.rect(14, yPos, pageWidth - 28, 35, "S");
-
-    yPos += 8;
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text(`Client Price: $${fmt(project.clientPrice)}`, 20, yPos);
-
-    yPos += 8;
     doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text(`TOTAL PROJECT INVESTMENT: $${fmt(totalPrice)}`, 14, yPos);
+    yPos += 15;
+
+    // Wiring Information
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text("WIRE TRANSFER INFORMATION", 14, yPos);
+    yPos += 8;
+
+    doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
-    doc.text(`Profit (≈ OH&P amount): $${fmt(project.ohpAmount)}`, 20, yPos);
+    doc.text("For wire transfers, please use the following banking details:", 14, yPos);
+    yPos += 8;
 
-    yPos += 6;
-    doc.text(`Gross Margin: ${fmt(project.grossMarginPct)}%`, 20, yPos);
+    const wireInfo = [
+      "Bank Name: [Your Bank Name]",
+      "Account Name: Prana Plunge LLC",
+      "Account Number: [Account Number]",
+      "Routing Number: [Routing Number]",
+      "Swift Code: [Swift Code] (for international transfers)",
+      "",
+      "Please include proposal number in wire reference: " + clientInfo.proposalNumber,
+    ];
 
-    yPos += 6;
-    doc.text(`Effective $/sf (client): $${fmt(project.effectivePerSf)}`, 20, yPos);
+    wireInfo.forEach(line => {
+      doc.text(line, 20, yPos);
+      yPos += 5;
+    });
+
+    yPos += 10;
+
+    // Signature Section
+    if (yPos > 220) {
+      doc.addPage();
+      yPos = 20;
+    }
+
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text("PROPOSAL ACCEPTANCE", 14, yPos);
+    yPos += 15;
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text("By signing below, Client accepts the terms and conditions outlined in this proposal.", 14, yPos);
+    yPos += 15;
+
+    doc.line(14, yPos, 90, yPos);
+    yPos += 5;
+    doc.setFontSize(8);
+    doc.text("Client Signature", 14, yPos);
+    yPos += 10;
+
+    doc.line(14, yPos, 90, yPos);
+    yPos += 5;
+    doc.text("Printed Name", 14, yPos);
+    yPos += 10;
+
+    doc.line(14, yPos, 90, yPos);
+    yPos += 5;
+    doc.text("Date", 14, yPos);
+
+    yPos = yPos - 30;
+    doc.line(110, yPos + 15, 186, yPos + 15);
+    yPos += 20;
+    doc.text("Prana Plunge Representative", 110, yPos);
+    yPos += 10;
+
+    doc.line(110, yPos, 186, yPos);
+    yPos += 5;
+    doc.text("Printed Name", 110, yPos);
+    yPos += 10;
+
+    doc.line(110, yPos, 186, yPos);
+    yPos += 5;
+    doc.text("Date", 110, yPos);
 
     // Save the PDF
     const filename = `${projectName.replace(/\s+/g, '_')}_Pool_Estimate_${new Date().toISOString().split('T')[0]}.pdf`;
@@ -1230,8 +1671,186 @@ export default function EpsPoolCalculator() {
   /* ------------------------------- UI -------------------------------- */
   return (
     <div style={{ display: "grid", gap: 16 }}>
+      {/* Client & Project Information */}
+      <Card title="Client & Project Information">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
+          <div>
+            <Row label="Client Name">
+              <input
+                value={clientInfo.clientName}
+                onChange={e => setClientInfo({...clientInfo, clientName: e.target.value})}
+                className="w-full px-2.5 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-100"
+                placeholder="Client company name"
+              />
+            </Row>
+            <Row label="Contact Email">
+              <input
+                type="email"
+                value={clientInfo.contactEmail}
+                onChange={e => setClientInfo({...clientInfo, contactEmail: e.target.value})}
+                className="w-full px-2.5 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-100"
+                placeholder="email@example.com"
+              />
+            </Row>
+            <Row label="Contact Phone">
+              <input
+                type="tel"
+                value={clientInfo.contactPhone}
+                onChange={e => setClientInfo({...clientInfo, contactPhone: e.target.value})}
+                className="w-full px-2.5 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-100"
+                placeholder="(555) 123-4567"
+              />
+            </Row>
+          </div>
+          <div>
+            <Row label="Project Address">
+              <input
+                value={clientInfo.projectAddress}
+                onChange={e => setClientInfo({...clientInfo, projectAddress: e.target.value})}
+                className="w-full px-2.5 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-100"
+                placeholder="123 Main St, City, State ZIP"
+              />
+            </Row>
+            <Row label="Proposal Date">
+              <input
+                type="date"
+                value={clientInfo.proposalDate}
+                onChange={e => setClientInfo({...clientInfo, proposalDate: e.target.value})}
+                className="w-full px-2.5 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-100"
+              />
+            </Row>
+            <Row label="Proposal #">
+              <input
+                value={clientInfo.proposalNumber}
+                onChange={e => setClientInfo({...clientInfo, proposalNumber: e.target.value})}
+                className="w-full px-2.5 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-100"
+                placeholder="PP-123456"
+              />
+            </Row>
+          </div>
+        </div>
+      </Card>
+
+      {/* Project Notes & Scope */}
+      <Card title="Project Notes & Scope">
+        <div style={{ display: "grid", gap: 12 }}>
+          <div>
+            <label className="block text-sm font-semibold mb-1.5 dark:text-gray-100">Scope Summary / Notes</label>
+            <textarea
+              value={projectNotes.scopeNotes}
+              onChange={e => setProjectNotes({...projectNotes, scopeNotes: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-100"
+              rows={3}
+              placeholder="Brief overview of project scope..."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1.5 dark:text-gray-100">Custom Assumptions</label>
+            <textarea
+              value={projectNotes.assumptions}
+              onChange={e => setProjectNotes({...projectNotes, assumptions: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-100"
+              rows={2}
+              placeholder="Project-specific assumptions..."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1.5 dark:text-gray-100">
+              Inclusions
+              <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">(One item per line)</span>
+            </label>
+            <textarea
+              value={projectNotes.inclusions}
+              onChange={e => setProjectNotes({...projectNotes, inclusions: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-100 font-mono text-sm"
+              rows={8}
+              placeholder="One inclusion per line..."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1.5 dark:text-gray-100">
+              Exclusions
+              <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">(One item per line)</span>
+            </label>
+            <textarea
+              value={projectNotes.exclusions}
+              onChange={e => setProjectNotes({...projectNotes, exclusions: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-100 font-mono text-sm"
+              rows={8}
+              placeholder="One exclusion per line..."
+            />
+          </div>
+        </div>
+      </Card>
+
+      {/* Photos */}
+      <Card title="Project Photos">
+        <div>
+          <div className="mb-3">
+            <label className="block text-sm font-semibold mb-2 dark:text-gray-100">Add Photos</label>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => {
+                const files = e.target.files;
+                if (!files) return;
+
+                Array.from(files).forEach(file => {
+                  const reader = new FileReader();
+                  reader.onload = (event) => {
+                    const dataUrl = event.target?.result as string;
+                    setPhotos(prev => [...prev, {
+                      id: Date.now().toString() + Math.random(),
+                      dataUrl,
+                      caption: file.name,
+                    }]);
+                  };
+                  reader.readAsDataURL(file);
+                });
+
+                // Reset input
+                e.target.value = '';
+              }}
+              className="block w-full text-sm text-gray-500 dark:text-gray-400
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-lg file:border-0
+                file:text-sm file:font-semibold
+                file:bg-blue-50 file:text-blue-700
+                dark:file:bg-blue-900/30 dark:file:text-blue-400
+                hover:file:bg-blue-100 dark:hover:file:bg-blue-900/50
+                cursor-pointer"
+            />
+          </div>
+
+          {photos.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {photos.map(photo => (
+                <div key={photo.id} className="relative border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden">
+                  <img src={photo.dataUrl} alt={photo.caption} className="w-full h-32 object-cover" />
+                  <div className="p-2 bg-white dark:bg-gray-800">
+                    <input
+                      value={photo.caption}
+                      onChange={e => setPhotos(prev => prev.map(p => p.id === photo.id ? {...p, caption: e.target.value} : p))}
+                      className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-gray-100"
+                      placeholder="Caption..."
+                    />
+                  </div>
+                  <button
+                    onClick={() => setPhotos(prev => prev.filter(p => p.id !== photo.id))}
+                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-red-600"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
+
       {/* Export to PDF */}
-      <Card title="Export">
+      <Card title="Export Proposal">
         <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
           <label className="text-sm font-semibold min-w-[100px] dark:text-gray-100">Project Name:</label>
           <input

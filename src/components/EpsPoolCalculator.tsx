@@ -2,6 +2,7 @@
 import React, { useMemo, useState } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import VesselVisualization from "./VesselVisualization";
 
 /* ----------------------------- helpers ----------------------------- */
 const clampN = (n: number) => (Number.isFinite(n) ? Math.max(0, n) : 0);
@@ -2245,7 +2246,7 @@ Engineering stamps or special inspections not defined in base scope`,
                           next[idxP] = { ...next[idxP], items: next[idxP].items.map((x, i) => i === idxI ? { ...x, label: e.target.value } : x) };
                           setPackages(next);
                         }}
-                        style={input}
+                        className="w-full px-2.5 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-100"
                       />
                       <Num
                         value={it.cost}
@@ -2721,181 +2722,12 @@ Engineering stamps or special inspections not defined in base scope`,
                 <div key={v.id} style={{ marginBottom: 24, padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
                   <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>{v.name} — {v.type}</h3>
 
-                  {/* SVG Plan View */}
-                  {(() => {
-                    const L = clampN(v.length_ft);
-                    const W = clampN(v.width_ft);
-                    const padding = 60;
-                    const scale = Math.min(400 / L, 300 / W, 30);
-                    const svgW = L * scale + padding * 2;
-                    const svgH = W * scale + padding * 2;
-
-                    return (
-                      <div style={{ marginBottom: 16, background: "#f9fafb", padding: 16, borderRadius: 8, overflow: "auto" }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>Plan View</div>
-                        <svg
-                          width={svgW}
-                          height={svgH}
-                          style={{ border: "1px solid #e5e7eb", background: "white", borderRadius: 4 }}
-                        >
-                          {/* Vessel outline */}
-                          <rect
-                            x={padding}
-                            y={padding}
-                            width={L * scale}
-                            height={W * scale}
-                            fill="#dbeafe"
-                            stroke="#2563eb"
-                            strokeWidth="2"
-                          />
-
-                          {/* Dimension lines and labels */}
-                          {/* Length dimension (top) */}
-                          <line
-                            x1={padding}
-                            y1={padding - 20}
-                            x2={padding + L * scale}
-                            y2={padding - 20}
-                            stroke="#6b7280"
-                            strokeWidth="1"
-                          />
-                          <line x1={padding} y1={padding - 25} x2={padding} y2={padding - 15} stroke="#6b7280" strokeWidth="1" />
-                          <line x1={padding + L * scale} y1={padding - 25} x2={padding + L * scale} y2={padding - 15} stroke="#6b7280" strokeWidth="1" />
-                          <text
-                            x={padding + (L * scale) / 2}
-                            y={padding - 25}
-                            textAnchor="middle"
-                            fontSize="12"
-                            fill="#374151"
-                            fontWeight="600"
-                          >
-                            {L.toFixed(1)}'
-                          </text>
-
-                          {/* Width dimension (right) */}
-                          <line
-                            x1={padding + L * scale + 20}
-                            y1={padding}
-                            x2={padding + L * scale + 20}
-                            y2={padding + W * scale}
-                            stroke="#6b7280"
-                            strokeWidth="1"
-                          />
-                          <line x1={padding + L * scale + 15} y1={padding} x2={padding + L * scale + 25} y2={padding} stroke="#6b7280" strokeWidth="1" />
-                          <line x1={padding + L * scale + 15} y1={padding + W * scale} x2={padding + L * scale + 25} y2={padding + W * scale} stroke="#6b7280" strokeWidth="1" />
-                          <text
-                            x={padding + L * scale + 35}
-                            y={padding + (W * scale) / 2}
-                            textAnchor="middle"
-                            fontSize="12"
-                            fill="#374151"
-                            fontWeight="600"
-                            transform={`rotate(90, ${padding + L * scale + 35}, ${padding + (W * scale) / 2})`}
-                          >
-                            {W.toFixed(1)}'
-                          </text>
-
-                          {/* Bench */}
-                          {v.hasBench && (() => {
-                            const bL = clampN(v.benchLength_ft);
-                            const bD = clampN(v.benchDepth_ft);
-                            // Position bench along bottom wall
-                            const xPos = padding + (L * scale - bL * scale) / 2;
-                            const yPos = padding + W * scale - bD * scale - 2;
-
-                            return (
-                              <g key="bench">
-                                <rect
-                                  x={xPos}
-                                  y={yPos}
-                                  width={bL * scale}
-                                  height={bD * scale}
-                                  fill="#fbbf24"
-                                  stroke="#f59e0b"
-                                  strokeWidth="1.5"
-                                  opacity="0.7"
-                                />
-                                <text
-                                  x={xPos + (bL * scale) / 2}
-                                  y={yPos + (bD * scale) / 2}
-                                  textAnchor="middle"
-                                  fontSize="10"
-                                  fill="#78350f"
-                                  fontWeight="600"
-                                  dominantBaseline="middle"
-                                >
-                                  Bench
-                                </text>
-                                <text
-                                  x={xPos + (bL * scale) / 2}
-                                  y={yPos + (bD * scale) / 2 + 12}
-                                  textAnchor="middle"
-                                  fontSize="9"
-                                  fill="#78350f"
-                                  dominantBaseline="middle"
-                                >
-                                  {bL.toFixed(1)}'×{bD.toFixed(1)}'
-                                </text>
-                              </g>
-                            );
-                          })()}
-
-                          {/* Steps */}
-                          {v.hasSteps && (() => {
-                            const sW = clampN(v.stepsWidth_ft);
-                            const sTread = clampN(v.stepTread_ft);
-                            const nRisers = Math.max(1, Math.round(clampN(v.stepsCount)));
-                            // Position steps in bottom left corner
-                            const xPos = padding + 4;
-                            const yPos = padding + W * scale - nRisers * sTread * scale - 4;
-
-                            return (
-                              <g key="steps">
-                                {/* Draw stepped shape */}
-                                {Array.from({ length: nRisers }).map((_, riserIdx) => (
-                                  <rect
-                                    key={riserIdx}
-                                    x={xPos}
-                                    y={yPos + riserIdx * sTread * scale}
-                                    width={sW * scale}
-                                    height={sTread * scale}
-                                    fill="#86efac"
-                                    stroke="#22c55e"
-                                    strokeWidth="1"
-                                    opacity={0.8 - (riserIdx * 0.1)}
-                                  />
-                                ))}
-                                <text
-                                  x={xPos + (sW * scale) / 2}
-                                  y={yPos + (nRisers * sTread * scale) / 2}
-                                  textAnchor="middle"
-                                  fontSize="10"
-                                  fill="#166534"
-                                  fontWeight="600"
-                                  dominantBaseline="middle"
-                                >
-                                  Steps
-                                </text>
-                              </g>
-                            );
-                          })()}
-
-                          {/* Water depth annotation */}
-                          <text
-                            x={padding + (L * scale) / 2}
-                            y={padding + (W * scale) / 2}
-                            textAnchor="middle"
-                            fontSize="14"
-                            fill="#1e40af"
-                            fontWeight="600"
-                            dominantBaseline="middle"
-                          >
-                            Depth: {v.waterDepth_ft.toFixed(1)}'
-                          </text>
-                        </svg>
-                      </div>
-                    );
-                  })()}
+                  {/* Interactive Vessel Visualization */}
+                  <VesselVisualization
+                    vessel={v}
+                    constructionType={constructionType}
+                    onVesselUpdate={(updates) => updateVessel(v.id, updates)}
+                  />
 
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 16 }}>
                     {/* Geometry */}
